@@ -10,7 +10,57 @@ import { Tokenizer } from "./tokenizer";
 import { TreeBuilder } from "./tree-builder";
 import type { TreeBuilderOptions } from "./tree-builder";
 
-export type { MismatchBehavior, ErrorReporter, TreeBuilderOptions } from "./tree-builder";
+export type { MismatchBehavior, TreeBuilderOptions } from "./tree-builder";
+export { isComponentName } from "./tree-builder";
+
+/**
+ * A structured, **recoverable** JSX-level error event (PLAN.md §7), emitted
+ * through `onJsxError` **as soon as the error is detected** while a chunk is
+ * parsed — independent of rendering and of the configured recovery mode — so
+ * a stream producer (e.g. an LLM agent) can get instant feedback while the
+ * tree still recovers tolerantly. Unrecoverable stream failures are not part
+ * of this union; the React adapter reports those through `onStreamError`.
+ */
+export type JsxErrorEvent =
+  | {
+      /** A closing tag that does not match the innermost open element. */
+      kind: "mismatched-tag";
+      /** Human-readable description (safe to feed back to an agent). */
+      message: string;
+      /** Name of the offending closing tag (`""` for `</>`). */
+      tag: string;
+      /**
+       * Name of the innermost open element it was compared against (`""` for a
+       * fragment), or `null` when nothing was open (a stray closing tag).
+       */
+      expected: string | null;
+    }
+  | {
+      /** A component-like tag (Capitalized / dotted) that failed resolution. */
+      kind: "unknown-component";
+      message: string;
+      /** The unresolved tag name. */
+      tag: string;
+    }
+  | {
+      /** A `{ }` expression outside the supported subset. */
+      kind: "unsupported-expression";
+      message: string;
+      /** Raw source between the braces. */
+      expression: string;
+      /** Attribute name, when the expression was an attribute value. */
+      attribute?: string;
+    }
+  | {
+      /** An element still open when the stream ended (auto-closed). */
+      kind: "unclosed-tag";
+      message: string;
+      /** Name of the element left open (`""` for a fragment). */
+      tag: string;
+    };
+
+/** Listener for the unified {@link JsxErrorEvent} channel. */
+export type JsxErrorListener = (event: JsxErrorEvent) => void;
 
 /** Options for the low-level {@link createParser}. */
 export type ParserOptions = TreeBuilderOptions;
@@ -63,7 +113,8 @@ export type PropValue = string | number | boolean | null | undefined | Node;
 /**
  * Sentinel stored as an {@link ExpressionNode.value} (or {@link PropValue}) when
  * an expression falls outside the supported subset (PLAN.md §2, §7). The React
- * adapter renders it as nothing and reports it through `onError`.
+ * adapter renders it as nothing; the error is reported at parse time through
+ * `onJsxError` (`kind: "unsupported-expression"`).
  */
 export const UNSUPPORTED_EXPRESSION: unique symbol = Symbol("unsupported-expression");
 

@@ -17,8 +17,8 @@ the right.
 - **The single frontier** — exactly one shimmer at a time, nested in the
   innermost open element.
 - **Lenient parsing** — the "Malformed" sample omits close tags and uses an
-  unsupported `{ }` expression; the parser recovers and reports via `onError`
-  instead of throwing.
+  unsupported `{ }` expression; the parser recovers and reports structured
+  events via `onJsxError` instead of throwing.
 - **Components as an allowlist** — only the components in
   [`src/components.tsx`](./src/components.tsx) can be instantiated by the streamed
   JSX; anything else degrades to `<Pending />`.
@@ -73,7 +73,7 @@ const node = useIncrementalJsx(stream, {
   components: demoComponents,      // allowlist + renderers
   Pending: Shimmer,               // frontier placeholder
   onUnknownComponent: "pending",
-  onError: (err) => { /* surfaced in the UI */ },
+  onJsxError: (event) => { /* event.message surfaced in the UI */ },
 });
 ```
 

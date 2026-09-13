@@ -14,4 +14,4 @@ the streaming frontier.
   string/boolean/expression attributes, and `{ }` expressions (string/template
   literals without substitutions, numbers, `true`/`false`/`null`/`undefined`,
   and nested JSX).
-- Lenient error handling (auto-close, configurable `mismatchedTag`, `onError`).
+- Lenient error handling (auto-close, configurable `mismatchedTag`).

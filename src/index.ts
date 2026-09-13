@@ -10,9 +10,9 @@
 
 import type { ComponentType, ReactNode } from "react";
 
-import type { MismatchBehavior, Node } from "./core";
+import type { JsxErrorEvent, MismatchBehavior, Node } from "./core";
 import { createParser } from "./core";
-import { createRenderer } from "./render";
+import { createRenderer, type UnknownComponentBehavior } from "./render";
 import type { JsxStreamSource } from "./stream";
 import { pumpStream } from "./stream";
 
@@ -25,12 +25,12 @@ export type {
   PendingNode,
   PropValue,
   MismatchBehavior,
+  JsxErrorEvent,
+  JsxErrorListener,
 } from "./core";
 export type { JsxStreamSource } from "./stream";
 export { Pending } from "./render";
-
-/** How to handle a component tag that is not in the `components` map. */
-export type UnknownComponentBehavior = "pending" | "error" | "passthrough";
+export type { UnknownComponentBehavior } from "./render";
 
 export interface IncrementalJsxParserOptions {
   /** Tag name -> React component map for capitalized JSX names. */
@@ -41,10 +41,24 @@ export interface IncrementalJsxParserOptions {
   resolveComponent?: (name: string) => ComponentType<never> | undefined;
   /** Behavior for an unresolved component tag (default: "pending"). */
   onUnknownComponent?: UnknownComponentBehavior;
-  /** Closing-tag mismatch strategy (default: "autoclose"). */
+  /** Closing-tag mismatch recovery strategy (default: "autoclose"). */
   mismatchedTag?: MismatchBehavior;
-  /** Called on a recoverable parse/stream/render error. */
-  onError?: (error: unknown, info: { phase: string }) => void;
+  /**
+   * The channel for **recoverable** errors: unified structured JSX-level
+   * events (mismatched/unclosed tags, unknown components, unsupported
+   * expressions), fired synchronously **as soon as each error is parsed** —
+   * before any render, and in every `mismatchedTag` / `onUnknownComponent`
+   * mode. Recovery is unaffected, so this is the channel to feed instant
+   * feedback to a stream producer.
+   */
+  onJsxError?: (event: JsxErrorEvent) => void;
+  /**
+   * The channel for **unrecoverable** errors: called once if the stream
+   * source fails. Parsing stops at the last good snapshot (which stays
+   * rendered) and {@link IncrementalJsxParser.done} rejects with the same
+   * error.
+   */
+  onStreamError?: (error: unknown) => void;
 }
 
 /**
@@ -73,7 +87,15 @@ export function createIncrementalJsxParser(
   source: JsxStreamSource,
   options: IncrementalJsxParserOptions = {},
 ): IncrementalJsxParser {
-  const core = createParser({ mismatchedTag: options.mismatchedTag, onError: options.onError });
+  const core = createParser({
+    mismatchedTag: options.mismatchedTag,
+    onJsxError: options.onJsxError,
+    // Only probe component resolution at parse time when someone listens, so
+    // `resolveComponent` sees no extra calls otherwise.
+    isKnownComponent: options.onJsxError
+      ? (tag) => (options.resolveComponent?.(tag) ?? options.components?.[tag]) != null
+      : undefined,
+  });
   const renderer = createRenderer(options);
 
   let lastTree: readonly Node[] | undefined;
@@ -95,7 +117,7 @@ export function createIncrementalJsxParser(
   const done = handle.done.then(
     () => undefined,
     (error: unknown) => {
-      options.onError?.(error, { phase: "stream" });
+      options.onStreamError?.(error);
       throw error;
     },
   );

@@ -16,29 +16,49 @@ import type {
   ElementNode,
   ExpressionNode,
   FragmentNode,
+  JsxErrorListener,
   Node,
   PendingNode,
   PropValue,
   TextNode,
 } from "./core";
-import { parseExpression } from "./expression";
+import { UNSUPPORTED_EXPRESSION } from "./core";
+import { parseExpression, type ParsedExpression } from "./expression";
 import type { AttrValue, Partial, Token } from "./tokenizer";
 import { Tokenizer } from "./tokenizer";
 
 /** A node that can still receive children (sits on the open stack). */
 type OpenNode = ElementNode | FragmentNode;
 
-/** How to handle a closing tag that does not match the innermost open element. */
-export type MismatchBehavior = "autoclose" | "ignore" | "error";
+/**
+ * How to repair the tree when a closing tag does not match the innermost open
+ * element. Purely a recovery strategy — the mismatch is always reported
+ * through {@link TreeBuilderOptions.onJsxError} regardless of the mode.
+ */
+export type MismatchBehavior = "autoclose" | "ignore";
 
-/** A recoverable-error reporter (shared with the React adapter's `onError`). */
-export type ErrorReporter = (error: unknown, info: { phase: string }) => void;
+/** Whether a tag name resolves as a component (Capitalized or `Foo.Bar`). */
+export function isComponentName(tag: string): boolean {
+  const first = tag.charCodeAt(0);
+  return (first >= 65 && first <= 90) || tag.includes(".");
+}
 
 export interface TreeBuilderOptions {
-  /** Closing-tag mismatch strategy (default: "autoclose"). */
+  /** Closing-tag mismatch recovery strategy (default: "autoclose"). */
   mismatchedTag?: MismatchBehavior | undefined;
-  /** Called on a recoverable parse error. */
-  onError?: ErrorReporter | undefined;
+  /**
+   * The unified structured error channel: called synchronously, at parse time,
+   * for every JSX-level error — whatever recovery mode is configured.
+   * Reporting is decoupled from recovery: the tree is still repaired
+   * tolerantly.
+   */
+  onJsxError?: JsxErrorListener | undefined;
+  /**
+   * Optional resolver check: when provided, opening a component-like tag
+   * (see {@link isComponentName}) it does not recognize emits an
+   * `"unknown-component"` event. Recovery/rendering is unaffected.
+   */
+  isKnownComponent?: ((tag: string) => boolean) | undefined;
 }
 
 /** The single frontier marker has a fixed key (only ever one exists at a time). */
@@ -52,11 +72,13 @@ interface Building {
 
 export class TreeBuilder {
   private readonly mismatchedTag: MismatchBehavior;
-  private readonly onError: ErrorReporter | undefined;
+  private readonly onJsxError: JsxErrorListener | undefined;
+  private readonly isKnownComponent: ((tag: string) => boolean) | undefined;
 
   constructor(options: TreeBuilderOptions = {}) {
     this.mismatchedTag = options.mismatchedTag ?? "autoclose";
-    this.onError = options.onError;
+    this.onJsxError = options.onJsxError;
+    this.isKnownComponent = options.isKnownComponent;
   }
 
   private nextId = 0;
@@ -79,7 +101,7 @@ export class TreeBuilder {
       }
       case "attribute": {
         if (this.building) {
-          this.building.props[token.name] = this.attrToProp(token.value);
+          this.building.props[token.name] = this.attrToProp(token.name, token.value);
         }
         return;
       }
@@ -114,7 +136,7 @@ export class TreeBuilder {
         return;
       }
       case "expr": {
-        const value = parseExpression(token.raw, (src) => this.parseJsx(src));
+        const value = this.parseExpr(token.raw);
         const node: ExpressionNode = { kind: "expression", id: this.nextId++, value };
         this.appendChild(freeze(node));
         return;
@@ -122,7 +144,7 @@ export class TreeBuilder {
     }
   }
 
-  private attrToProp(value: AttrValue): PropValue {
+  private attrToProp(name: string, value: AttrValue): PropValue {
     switch (value.type) {
       case "string":
         return value.value;
@@ -130,14 +152,41 @@ export class TreeBuilder {
         return true;
       case "expression":
         // The sentinel for an unsupported expression is detected by the adapter.
-        return parseExpression(value.raw, (src) => this.parseJsx(src)) as PropValue;
+        return this.parseExpr(value.raw, name) as PropValue;
     }
+  }
+
+  /** Parse a `{ }` expression, reporting an unsupported one as it is detected. */
+  private parseExpr(raw: string, attribute?: string): ParsedExpression {
+    const value = parseExpression(raw, (src) => this.parseJsx(src));
+    if (value === UNSUPPORTED_EXPRESSION && this.onJsxError) {
+      this.onJsxError(
+        attribute === undefined
+          ? {
+              kind: "unsupported-expression",
+              message: `Unsupported expression: {${raw}}`,
+              expression: raw,
+            }
+          : {
+              kind: "unsupported-expression",
+              message: `Unsupported expression in attribute "${attribute}": {${raw}}`,
+              expression: raw,
+              attribute,
+            },
+      );
+    }
+    return value;
   }
 
   /** Parse a nested JSX expression by running a fresh, self-contained parse. */
   private parseJsx(src: string): Node | undefined {
     const tokenizer = new Tokenizer();
-    const builder = new TreeBuilder();
+    // Nested JSX keeps the default recovery (unchanged behavior), but its
+    // errors still surface through the unified event channel.
+    const builder = new TreeBuilder({
+      onJsxError: this.onJsxError,
+      isKnownComponent: this.isKnownComponent,
+    });
     for (const token of tokenizer.write(src)) builder.push(token);
     for (const token of tokenizer.end()) builder.push(token);
     builder.end();
@@ -155,10 +204,22 @@ export class TreeBuilder {
 
   /**
    * Finalize the stream: close any still-open nodes (best-effort; richer
-   * recovery arrives in Phase 7) and drop the frontier.
+   * recovery arrives in Phase 7) and drop the frontier. Each auto-closed node
+   * is reported as an `"unclosed-tag"` event, innermost first.
    */
   end(): void {
-    while (this.openStack.length > 0) this.closeTop();
+    while (this.openStack.length > 0) {
+      const name = nodeName(this.openStack[this.openStack.length - 1]!);
+      this.onJsxError?.({
+        kind: "unclosed-tag",
+        message:
+          name === ""
+            ? "Unclosed fragment <> at end of input"
+            : `Unclosed tag <${name}> at end of input`,
+        tag: name,
+      });
+      this.closeTop();
+    }
     this.building = null;
     this.ended = true;
   }
@@ -190,6 +251,18 @@ export class TreeBuilder {
     if (building.name === "") {
       return { kind: "fragment", id, children: [], status: "open" };
     }
+    if (
+      this.onJsxError &&
+      this.isKnownComponent &&
+      isComponentName(building.name) &&
+      !this.isKnownComponent(building.name)
+    ) {
+      this.onJsxError({
+        kind: "unknown-component",
+        message: `Unknown component <${building.name}>`,
+        tag: building.name,
+      });
+    }
     return {
       kind: "element",
       id,
@@ -206,20 +279,34 @@ export class TreeBuilder {
    */
   private closeTag(name: string): void {
     const stack = this.openStack;
-    if (stack.length === 0) return; // stray close with nothing open
+    if (stack.length === 0) {
+      // Stray close with nothing open: report it, then ignore it (unchanged).
+      this.onJsxError?.({
+        kind: "mismatched-tag",
+        message: `Stray closing tag </${name}> with nothing open`,
+        tag: name,
+        expected: null,
+      });
+      return;
+    }
 
     const top = stack[stack.length - 1]!;
-    if (nodeName(top) === name) {
+    const expected = nodeName(top);
+    if (expected === name) {
       this.closeTop();
       return;
     }
 
-    // The innermost element does not match `name`.
+    // The innermost element does not match `name`. Report first — the event
+    // fires in every recovery mode — then recover per `mismatchedTag`.
+    this.onJsxError?.({
+      kind: "mismatched-tag",
+      message: `Mismatched closing tag </${name}>; expected </${expected}>`,
+      tag: name,
+      expected,
+    });
     switch (this.mismatchedTag) {
       case "ignore":
-        return;
-      case "error":
-        this.onError?.(new Error(`Mismatched closing tag </${name}>`), { phase: "parse" });
         return;
       case "autoclose": {
         // Close down to a matching ancestor if there is one; otherwise treat the

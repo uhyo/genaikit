@@ -17,11 +17,15 @@
 import { createElement, Fragment } from "react";
 import type { ComponentType, ReactNode } from "react";
 
-import { UNSUPPORTED_EXPRESSION } from "./core";
+import { isComponentName, UNSUPPORTED_EXPRESSION } from "./core";
 import type { ElementNode, Node } from "./core";
 
-/** How to handle a component tag that cannot be resolved. */
-export type UnknownComponentBehavior = "pending" | "error" | "passthrough";
+/**
+ * How to render a component tag that cannot be resolved. Purely a rendering
+ * strategy — the unresolved tag is reported at parse time through
+ * `onJsxError` (`kind: "unknown-component"`) regardless of the mode.
+ */
+export type UnknownComponentBehavior = "pending" | "skip" | "passthrough";
 
 export interface RenderOptions {
   /** Tag name -> React component, for Capitalized JSX names. */
@@ -30,10 +34,8 @@ export interface RenderOptions {
   Pending?: ComponentType<unknown> | undefined;
   /** Optional resolver, consulted before the `components` map. */
   resolveComponent?: ((name: string) => ComponentType<never> | undefined) | undefined;
-  /** Behavior for an unresolved component tag (default: "pending"). */
+  /** Rendering of an unresolved component tag (default: "pending"). */
   onUnknownComponent?: UnknownComponentBehavior | undefined;
-  /** Called on a recoverable render error (e.g. unknown component in "error"). */
-  onError?: ((error: unknown, info: { phase: string }) => void) | undefined;
 }
 
 /** Default frontier placeholder: an invisible node. */
@@ -111,7 +113,7 @@ export function createRenderer(options: RenderOptions = {}): Renderer {
   /** Resolve a prop value or expression value to a React-renderable value. */
   function renderValue(value: unknown): ReactNode {
     if (value === UNSUPPORTED_EXPRESSION) {
-      options.onError?.(new Error("Unsupported expression"), { phase: "expression" });
+      // Already reported at parse time (onJsxError "unsupported-expression").
       return null;
     }
     if (isNode(value)) {
@@ -132,8 +134,8 @@ export function createRenderer(options: RenderOptions = {}): Renderer {
     switch (behavior) {
       case "passthrough":
         return { kind: "host", tag };
-      case "error":
-        options.onError?.(new Error(`Unknown component <${tag}>`), { phase: "render" });
+      case "skip":
+        // Already reported at parse time (onJsxError "unknown-component").
         return { kind: "skip" };
       case "pending":
         return { kind: "pending" };
@@ -145,10 +147,4 @@ export function createRenderer(options: RenderOptions = {}): Renderer {
 
 function isNode(value: unknown): value is Node {
   return value !== null && typeof value === "object" && "kind" in value;
-}
-
-function isComponentName(tag: string): boolean {
-  const first = tag.charCodeAt(0);
-  // Uppercase A-Z (or a member expression like `Foo.Bar`) -> component.
-  return (first >= 65 && first <= 90) || tag.includes(".");
 }
