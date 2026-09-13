@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Tokenizer, type Partial, type Token } from "./tokenizer";
+import { Tokenizer, type Partial, type SourceLocation, type Token } from "./tokenizer";
 
 /** Tokenize `input` split into chunks of the given sizes, collecting all tokens. */
 function tokenize(input: string, chunkSizes?: number[]): Token[] {
@@ -20,6 +20,18 @@ function tokenize(input: string, chunkSizes?: number[]): Token[] {
   return tokens;
 }
 
+/** Strip source locations, for shape-only assertions on the token stream. */
+function bare(tokens: Token[]): unknown[] {
+  return tokens.map((token) => {
+    const { loc: _loc, ...rest } = token as Token & { loc?: SourceLocation };
+    if (rest.type === "attribute" && rest.value.type === "expression") {
+      const { loc: _valueLoc, ...value } = rest.value;
+      return { ...rest, value };
+    }
+    return rest;
+  });
+}
+
 /** Split `input` into chunks of exactly `size` characters. */
 function fixedChunks(input: string, size: number): number[] {
   const sizes: number[] = [];
@@ -29,7 +41,7 @@ function fixedChunks(input: string, size: number): number[] {
 
 describe("Tokenizer — emission", () => {
   it("tokenizes a simple element with text", () => {
-    expect(tokenize("<div>Hello</div>")).toEqual<Token[]>([
+    expect(bare(tokenize("<div>Hello</div>"))).toEqual([
       { type: "openTagStart", name: "div" },
       { type: "openTagEnd" },
       { type: "text", value: "Hello" },
@@ -38,7 +50,7 @@ describe("Tokenizer — emission", () => {
   });
 
   it("tokenizes nested elements", () => {
-    expect(tokenize("<div><span>hi</span></div>")).toEqual<Token[]>([
+    expect(bare(tokenize("<div><span>hi</span></div>"))).toEqual([
       { type: "openTagStart", name: "div" },
       { type: "openTagEnd" },
       { type: "openTagStart", name: "span" },
@@ -50,18 +62,18 @@ describe("Tokenizer — emission", () => {
   });
 
   it("tokenizes self-closing elements", () => {
-    expect(tokenize("<br />")).toEqual<Token[]>([
+    expect(bare(tokenize("<br />"))).toEqual([
       { type: "openTagStart", name: "br" },
       { type: "selfClose" },
     ]);
-    expect(tokenize("<br/>")).toEqual<Token[]>([
+    expect(bare(tokenize("<br/>"))).toEqual([
       { type: "openTagStart", name: "br" },
       { type: "selfClose" },
     ]);
   });
 
   it("tokenizes fragments", () => {
-    expect(tokenize("<>x</>")).toEqual<Token[]>([
+    expect(bare(tokenize("<>x</>"))).toEqual([
       { type: "openTagStart", name: "" },
       { type: "openTagEnd" },
       { type: "text", value: "x" },
@@ -70,7 +82,7 @@ describe("Tokenizer — emission", () => {
   });
 
   it("tokenizes string attributes (both quote styles)", () => {
-    expect(tokenize(`<a href="x" title='y'>`)).toEqual<Token[]>([
+    expect(bare(tokenize(`<a href="x" title='y'>`))).toEqual([
       { type: "openTagStart", name: "a" },
       { type: "attribute", name: "href", value: { type: "string", value: "x" } },
       { type: "attribute", name: "title", value: { type: "string", value: "y" } },
@@ -79,7 +91,7 @@ describe("Tokenizer — emission", () => {
   });
 
   it("tokenizes boolean shorthand attributes", () => {
-    expect(tokenize(`<input disabled required>`)).toEqual<Token[]>([
+    expect(bare(tokenize(`<input disabled required>`))).toEqual([
       { type: "openTagStart", name: "input" },
       { type: "attribute", name: "disabled", value: { type: "boolean" } },
       { type: "attribute", name: "required", value: { type: "boolean" } },
@@ -88,7 +100,7 @@ describe("Tokenizer — emission", () => {
   });
 
   it("handles a boolean attr immediately before self-close", () => {
-    expect(tokenize(`<hr noshade/>`)).toEqual<Token[]>([
+    expect(bare(tokenize(`<hr noshade/>`))).toEqual([
       { type: "openTagStart", name: "hr" },
       { type: "attribute", name: "noshade", value: { type: "boolean" } },
       { type: "selfClose" },
@@ -96,7 +108,7 @@ describe("Tokenizer — emission", () => {
   });
 
   it("mixes boolean and valued attributes", () => {
-    expect(tokenize(`<input type="text" disabled value="x">`)).toEqual<Token[]>([
+    expect(bare(tokenize(`<input type="text" disabled value="x">`))).toEqual([
       { type: "openTagStart", name: "input" },
       { type: "attribute", name: "type", value: { type: "string", value: "text" } },
       { type: "attribute", name: "disabled", value: { type: "boolean" } },
@@ -106,7 +118,7 @@ describe("Tokenizer — emission", () => {
   });
 
   it("keeps quotes-internal characters verbatim", () => {
-    expect(tokenize(`<a t="a<b>{c}">`)).toEqual<Token[]>([
+    expect(bare(tokenize(`<a t="a<b>{c}">`))).toEqual([
       { type: "openTagStart", name: "a" },
       { type: "attribute", name: "t", value: { type: "string", value: "a<b>{c}" } },
       { type: "openTagEnd" },
@@ -114,11 +126,11 @@ describe("Tokenizer — emission", () => {
   });
 
   it("flushes trailing text on end()", () => {
-    expect(tokenize("hello")).toEqual<Token[]>([{ type: "text", value: "hello" }]);
+    expect(bare(tokenize("hello"))).toEqual([{ type: "text", value: "hello" }]);
   });
 
   it("tokenizes capitalized component names", () => {
-    expect(tokenize("<Card></Card>")).toEqual<Token[]>([
+    expect(bare(tokenize("<Card></Card>"))).toEqual([
       { type: "openTagStart", name: "Card" },
       { type: "openTagEnd" },
       { type: "closeTag", name: "Card" },
@@ -126,11 +138,116 @@ describe("Tokenizer — emission", () => {
   });
 
   it("allows hyphen and dot in names", () => {
-    expect(tokenize("<my-el></my-el>")).toEqual<Token[]>([
+    expect(bare(tokenize("<my-el></my-el>"))).toEqual([
       { type: "openTagStart", name: "my-el" },
       { type: "openTagEnd" },
       { type: "closeTag", name: "my-el" },
     ]);
+  });
+});
+
+describe("Tokenizer — source locations", () => {
+  it("locates tags on a single line (loc points at `<`)", () => {
+    expect(tokenize("<div>hi</div>")).toEqual<Token[]>([
+      {
+        type: "openTagStart",
+        name: "div",
+        loc: { line: 1, column: 1, offset: 0, lineText: "<div>" },
+      },
+      { type: "openTagEnd", loc: { line: 1, column: 5, offset: 4, lineText: "<div>" } },
+      { type: "text", value: "hi" },
+      {
+        type: "closeTag",
+        name: "div",
+        loc: { line: 1, column: 8, offset: 7, lineText: "<div>hi</div>" },
+      },
+    ]);
+  });
+
+  it("tracks lines and columns across newlines", () => {
+    const tokens = tokenize("<div>\n  <p>x</p>\n</div>");
+    expect(tokens).toEqual<Token[]>([
+      {
+        type: "openTagStart",
+        name: "div",
+        loc: { line: 1, column: 1, offset: 0, lineText: "<div>" },
+      },
+      { type: "openTagEnd", loc: { line: 1, column: 5, offset: 4, lineText: "<div>" } },
+      { type: "text", value: "\n  " },
+      {
+        type: "openTagStart",
+        name: "p",
+        loc: { line: 2, column: 3, offset: 8, lineText: "  <p>" },
+      },
+      { type: "openTagEnd", loc: { line: 2, column: 5, offset: 10, lineText: "  <p>" } },
+      { type: "text", value: "x" },
+      {
+        type: "closeTag",
+        name: "p",
+        loc: { line: 2, column: 7, offset: 12, lineText: "  <p>x</p>" },
+      },
+      { type: "text", value: "\n" },
+      {
+        type: "closeTag",
+        name: "div",
+        loc: { line: 3, column: 1, offset: 17, lineText: "</div>" },
+      },
+    ]);
+  });
+
+  it("keeps the starting line's text for a tag that spans lines", () => {
+    const tokens = tokenize(`<div\nid="x">a</div>`);
+    expect(tokens[0]).toEqual<Token>({
+      type: "openTagStart",
+      name: "div",
+      loc: { line: 1, column: 1, offset: 0, lineText: "<div" },
+    });
+    expect(tokens[4]).toEqual<Token>({
+      type: "closeTag",
+      name: "div",
+      loc: { line: 2, column: 9, offset: 13, lineText: `id="x">a</div>` },
+    });
+  });
+
+  it("locates a child expression at its `{`", () => {
+    expect(tokenize("{42}")).toEqual<Token[]>([
+      { type: "expr", raw: "42", loc: { line: 1, column: 1, offset: 0, lineText: "{42}" } },
+    ]);
+  });
+
+  it("keeps the `{` line for an expression that spans lines", () => {
+    const tokens = tokenize("<p>{\n1 +\n2}</p>");
+    expect(tokens[2]).toEqual<Token>({
+      type: "expr",
+      raw: "\n1 +\n2",
+      loc: { line: 1, column: 4, offset: 3, lineText: "<p>{" },
+    });
+    expect(tokens[3]).toEqual<Token>({
+      type: "closeTag",
+      name: "p",
+      loc: { line: 3, column: 3, offset: 11, lineText: "2}</p>" },
+    });
+  });
+
+  it("locates an attribute expression value at its `{`", () => {
+    expect(tokenize("<a x={1}/>")[1]).toEqual<Token>({
+      type: "attribute",
+      name: "x",
+      value: {
+        type: "expression",
+        raw: "1",
+        loc: { line: 1, column: 6, offset: 5, lineText: "<a x={1}" },
+      },
+    });
+  });
+
+  it("counts columns and offsets in UTF-16 code units", () => {
+    // 😀 is one code point but two UTF-16 units.
+    expect(tokenize("😀<b/>")[1]).toEqual<Token>({
+      type: "openTagStart",
+      name: "b",
+      loc: { line: 1, column: 3, offset: 2, lineText: "😀<b/" },
+    });
   });
 });
 
@@ -159,6 +276,8 @@ describe("Tokenizer — getPending (frontier)", () => {
 });
 
 describe("Tokenizer — chunking invariance (PLAN §5)", () => {
+  // Locations are part of every compared token, so this suite also checks that
+  // line/column/lineText do not depend on chunk boundaries.
   const inputs = [
     "<div>Hello</div>",
     "<div><span>hi</span> world</div>",
@@ -169,6 +288,8 @@ describe("Tokenizer — chunking invariance (PLAN §5)", () => {
     "<Card><Button label='ok' primary /></Card>",
     "  <div>  spaced  </div>  ",
     `<a t="a<b>{c}">deep</a>`,
+    "<div>\n  <p a={1}>x</p>\n  {42}\n</div>",
+    "<ul>\n<li>one\n<li>two\n</ul>",
   ];
 
   for (const input of inputs) {
@@ -207,7 +328,7 @@ describe("Tokenizer — chunking invariance (PLAN §5)", () => {
     // job, handled in Phase 4).
     const input = "<p>café 😀 漢字</p>";
     const whole = tokenize(input);
-    expect(whole).toEqual<Token[]>([
+    expect(bare(whole)).toEqual([
       { type: "openTagStart", name: "p" },
       { type: "openTagEnd" },
       { type: "text", value: "café 😀 漢字" },

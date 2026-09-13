@@ -5,13 +5,20 @@ import { describe, expect, it, vi } from "vitest";
 import { UNSUPPORTED_EXPRESSION, type Node } from "./core";
 import { parseExpression } from "./expression";
 import { createRenderer, type RenderOptions } from "./render";
-import { Tokenizer, type Token } from "./tokenizer";
+import { Tokenizer, type SourceLocation, type Token } from "./tokenizer";
 import { TreeBuilder } from "./tree-builder";
 
-function tokenize(input: string): Token[] {
+/** Tokenize `input`, stripping source locations for shape-only assertions. */
+function tokenize(input: string): unknown[] {
   const tk = new Tokenizer();
-  const out = [...tk.write(input), ...tk.end()];
-  return out;
+  return [...tk.write(input), ...tk.end()].map((token) => {
+    const { loc: _loc, ...rest } = token as Token & { loc?: SourceLocation };
+    if (rest.type === "attribute" && rest.value.type === "expression") {
+      const { loc: _valueLoc, ...value } = rest.value;
+      return { ...rest, value };
+    }
+    return rest;
+  });
 }
 
 function build(input: string): readonly Node[] {
@@ -81,11 +88,11 @@ describe("parseExpression — literals", () => {
 
 describe("Tokenizer — expression containers", () => {
   it("emits a child expr token with raw inner source", () => {
-    expect(tokenize("<p>{ 42 }</p>")).toContainEqual<Token>({ type: "expr", raw: " 42 " });
+    expect(tokenize("<p>{ 42 }</p>")).toContainEqual({ type: "expr", raw: " 42 " });
   });
 
   it("emits an attribute expression token", () => {
-    expect(tokenize("<a x={1}>")).toContainEqual<Token>({
+    expect(tokenize("<a x={1}>")).toContainEqual({
       type: "attribute",
       name: "x",
       value: { type: "expression", raw: "1" },
@@ -93,12 +100,12 @@ describe("Tokenizer — expression containers", () => {
   });
 
   it("ignores braces and the closing brace inside string literals", () => {
-    expect(tokenize(`<p>{"}"}</p>`)).toContainEqual<Token>({ type: "expr", raw: `"}"` });
-    expect(tokenize(`<p>{ {a:1} }</p>`)).toContainEqual<Token>({ type: "expr", raw: " {a:1} " });
+    expect(tokenize(`<p>{"}"}</p>`)).toContainEqual({ type: "expr", raw: `"}"` });
+    expect(tokenize(`<p>{ {a:1} }</p>`)).toContainEqual({ type: "expr", raw: " {a:1} " });
   });
 
   it("captures nested JSX (with its own braces) as one expression", () => {
-    expect(tokenize("<p>{<b>{1}</b>}</p>")).toContainEqual<Token>({
+    expect(tokenize("<p>{<b>{1}</b>}</p>")).toContainEqual({
       type: "expr",
       raw: "<b>{1}</b>",
     });
@@ -153,7 +160,9 @@ describe("React adapter — unsupported expressions", () => {
 describe("Tokenizer — chunking invariance with expressions", () => {
   const input = `<div title={"a}b"}>x{42}y{<b k='}'>z</b>}</div>`;
   it("is invariant for every chunk size", () => {
-    const whole = tokenize(input);
+    // Compare unstripped tokens so source locations are covered too.
+    const wholeTk = new Tokenizer();
+    const whole: Token[] = [...wholeTk.write(input), ...wholeTk.end()];
     for (let size = 1; size <= input.length; size++) {
       const tk = new Tokenizer();
       const out: Token[] = [];

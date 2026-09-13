@@ -7,11 +7,13 @@
  */
 
 import { Tokenizer } from "./tokenizer";
+import type { SourceLocation } from "./tokenizer";
 import { TreeBuilder } from "./tree-builder";
 import type { TreeBuilderOptions } from "./tree-builder";
 
 export type { MismatchBehavior, TreeBuilderOptions } from "./tree-builder";
 export { isComponentName } from "./tree-builder";
+export type { SourceLocation } from "./tokenizer";
 
 /**
  * A structured, **recoverable** JSX-level error event (PLAN.md §7), emitted
@@ -20,6 +22,10 @@ export { isComponentName } from "./tree-builder";
  * a stream producer (e.g. an LLM agent) can get instant feedback while the
  * tree still recovers tolerantly. Unrecoverable stream failures are not part
  * of this union; the React adapter reports those through `onStreamError`.
+ *
+ * Every variant carries a {@link SourceLocation} pointing at the offending
+ * construct; {@link formatJsxError} renders `message` + location + the source
+ * line with a caret into one report string.
  */
 export type JsxErrorEvent =
   | {
@@ -34,6 +40,8 @@ export type JsxErrorEvent =
        * fragment), or `null` when nothing was open (a stray closing tag).
        */
       expected: string | null;
+      /** Where the offending closing tag starts (its `<`). */
+      location: SourceLocation;
     }
   | {
       /** A component-like tag (Capitalized / dotted) that failed resolution. */
@@ -41,6 +49,8 @@ export type JsxErrorEvent =
       message: string;
       /** The unresolved tag name. */
       tag: string;
+      /** Where the unresolved tag starts (its `<`). */
+      location: SourceLocation;
     }
   | {
       /** A `{ }` expression outside the supported subset. */
@@ -50,6 +60,8 @@ export type JsxErrorEvent =
       expression: string;
       /** Attribute name, when the expression was an attribute value. */
       attribute?: string;
+      /** Where the expression starts (its `{`). */
+      location: SourceLocation;
     }
   | {
       /** An element still open when the stream ended (auto-closed). */
@@ -57,10 +69,55 @@ export type JsxErrorEvent =
       message: string;
       /** Name of the element left open (`""` for a fragment). */
       tag: string;
+      /** Where the unclosed element was opened (its `<`). */
+      location: SourceLocation;
     };
 
 /** Listener for the unified {@link JsxErrorEvent} channel. */
 export type JsxErrorListener = (event: JsxErrorEvent) => void;
+
+/** Widest code frame rendered by {@link formatJsxError} before windowing. */
+const MAX_FRAME_WIDTH = 80;
+
+/**
+ * Render a {@link JsxErrorEvent} as a multi-line report: the `message`, the
+ * line/column, and the source line with a caret under the offending column —
+ * ready to log or to feed back to the agent producing the stream.
+ *
+ * ```text
+ * Mismatched closing tag </b>; expected </a> (line 2, column 8)
+ *
+ *   2 |   hello</b>
+ *     |        ^
+ * ```
+ *
+ * `lineText` holds the line as far as it had streamed when the error was
+ * captured, so the frame may end at the error itself. Long lines are windowed
+ * around the caret; leading tabs are preserved so the caret stays aligned.
+ */
+export function formatJsxError(event: JsxErrorEvent): string {
+  const { line, column, lineText } = event.location;
+  const header = `${event.message} (line ${line}, column ${column})`;
+
+  let text = lineText;
+  // Clamp the caret into the captured text (the line may have been truncated).
+  let caret = Math.min(Math.max(column, 1), text.length + 1);
+  if (text.length > MAX_FRAME_WIDTH) {
+    const start = Math.max(
+      0,
+      Math.min(caret - 1 - Math.floor(MAX_FRAME_WIDTH / 2), text.length - MAX_FRAME_WIDTH),
+    );
+    const end = start + MAX_FRAME_WIDTH;
+    const head = start > 0 ? "…" : "";
+    const tail = end < text.length ? "…" : "";
+    text = head + text.slice(start, end) + tail;
+    caret = caret - start + head.length;
+  }
+  // Mirror the line's own tabs in the caret padding so alignment survives them.
+  const padding = text.slice(0, caret - 1).replace(/[^\t]/g, " ");
+  const gutter = String(line);
+  return `${header}\n\n  ${gutter} | ${text}\n  ${" ".repeat(gutter.length)} | ${padding}^`;
+}
 
 /** Options for the low-level {@link createParser}. */
 export type ParserOptions = TreeBuilderOptions;
