@@ -146,18 +146,22 @@ describe("createIncrementalJsxParser (stream + React)", () => {
     expect(html(p.getSnapshot())).toBe("<div>hi<i>…</i></div>");
   });
 
-  it("rejects done and emits a stream-error event on a source read error", async () => {
+  it("rejects done and calls onStreamError on a source read error", async () => {
     const boom = new Error("boom");
     const failing = new ReadableStream<Uint8Array>({
       start(controller) {
         controller.error(boom);
       },
     });
-    const events: JsxErrorEvent[] = [];
-    const p = createIncrementalJsxParser(failing, { onJsxError: (e) => events.push(e) });
+    const streamErrors: unknown[] = [];
+    const jsxEvents: JsxErrorEvent[] = [];
+    const p = createIncrementalJsxParser(failing, {
+      onStreamError: (e) => streamErrors.push(e),
+      onJsxError: (e) => jsxEvents.push(e),
+    });
     await expect(p.done).rejects.toBe(boom);
-    expect(events).toEqual([
-      { kind: "stream-error", message: "Stream source failed: Error: boom", error: boom },
-    ]);
+    expect(streamErrors).toEqual([boom]);
+    // Unrecoverable stream failures never leak into the JSX-level channel.
+    expect(jsxEvents).toEqual([]);
   });
 });

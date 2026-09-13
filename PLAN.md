@@ -162,8 +162,7 @@ the React‑centric goal today.
 Pulls from the source in a background async loop, decodes bytes to text,
 forwards each chunk to the tokenizer, and after each processed chunk asks the
 store to notify subscribers. On stream end → `tokenizer.end()` + finalize. On
-read error → reject `done`, emit a `"stream-error"` event via `onJsxError`,
-keep last good snapshot.
+read error → reject `done`, call `onStreamError`, keep last good snapshot.
 
 ### 4.2 Tokenizer (incremental, resumable)
 A character‑level state machine that consumes as much of the current buffer as
@@ -266,14 +265,14 @@ AI output is frequently malformed, so the parser is **lenient by default**:
   recovery `mismatchedTag: "autoclose" | "ignore"` (default `"autoclose"`).
 - **Unsupported expression** (e.g. `{foo()}`): render the offending expression
   as nothing and continue.
-- **Read errors from the source:** reject `done`, retain the last good
-  snapshot.
+- **Read errors from the source:** unrecoverable — reject `done`, call
+  `onStreamError`, retain the last good snapshot.
 - The last successfully produced snapshot is always preserved; errors never
   blank the UI.
-- Every error above is additionally reported through the single structured
-  `onJsxError` event channel, synchronously at parse time and independent of
-  the recovery mode, so a stream producer (e.g. an agent) gets instant
-  feedback.
+- Every recoverable (JSX-level) error above is additionally reported through
+  the single structured `onJsxError` event channel, synchronously at parse
+  time and independent of the recovery mode, so a stream producer (e.g. an
+  agent) gets instant feedback.
 
 On normal completion: drop the `Pending` frontier, freeze remaining open nodes,
 emit a final update, resolve `done`.

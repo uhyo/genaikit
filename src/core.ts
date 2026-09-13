@@ -14,13 +14,12 @@ export type { MismatchBehavior, TreeBuilderOptions } from "./tree-builder";
 export { isComponentName } from "./tree-builder";
 
 /**
- * A structured, recoverable error event (PLAN.md §7) — the single error
- * channel of the parser. JSX-level kinds are emitted through `onJsxError`
- * **as soon as the error is detected** while a chunk is parsed — independent
- * of rendering and of the configured recovery mode — so a stream producer
- * (e.g. an LLM agent) can get instant feedback while the tree still recovers
- * tolerantly. The `"stream-error"` kind is emitted by the stream-driving React
- * adapter when the source fails (the core itself never reads a stream).
+ * A structured, **recoverable** JSX-level error event (PLAN.md §7), emitted
+ * through `onJsxError` **as soon as the error is detected** while a chunk is
+ * parsed — independent of rendering and of the configured recovery mode — so
+ * a stream producer (e.g. an LLM agent) can get instant feedback while the
+ * tree still recovers tolerantly. Unrecoverable stream failures are not part
+ * of this union; the React adapter reports those through `onStreamError`.
  */
 export type JsxErrorEvent =
   | {
@@ -58,13 +57,6 @@ export type JsxErrorEvent =
       message: string;
       /** Name of the element left open (`""` for a fragment). */
       tag: string;
-    }
-  | {
-      /** The stream source failed; `done` rejects with the same error. */
-      kind: "stream-error";
-      message: string;
-      /** The underlying error thrown by the source. */
-      error: unknown;
     };
 
 /** Listener for the unified {@link JsxErrorEvent} channel. */

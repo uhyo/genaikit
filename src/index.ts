@@ -44,14 +44,21 @@ export interface IncrementalJsxParserOptions {
   /** Closing-tag mismatch recovery strategy (default: "autoclose"). */
   mismatchedTag?: MismatchBehavior;
   /**
-   * The single error channel: unified structured error events (mismatched/
-   * unclosed tags, unknown components, unsupported expressions, stream
-   * failures). JSX-level kinds fire synchronously **as soon as each error is
-   * parsed** — before any render, and in every `mismatchedTag` /
-   * `onUnknownComponent` mode. Recovery is unaffected, so this is the channel
-   * to feed instant feedback to a stream producer.
+   * The channel for **recoverable** errors: unified structured JSX-level
+   * events (mismatched/unclosed tags, unknown components, unsupported
+   * expressions), fired synchronously **as soon as each error is parsed** —
+   * before any render, and in every `mismatchedTag` / `onUnknownComponent`
+   * mode. Recovery is unaffected, so this is the channel to feed instant
+   * feedback to a stream producer.
    */
   onJsxError?: (event: JsxErrorEvent) => void;
+  /**
+   * The channel for **unrecoverable** errors: called once if the stream
+   * source fails. Parsing stops at the last good snapshot (which stays
+   * rendered) and {@link IncrementalJsxParser.done} rejects with the same
+   * error.
+   */
+  onStreamError?: (error: unknown) => void;
 }
 
 /**
@@ -110,11 +117,7 @@ export function createIncrementalJsxParser(
   const done = handle.done.then(
     () => undefined,
     (error: unknown) => {
-      options.onJsxError?.({
-        kind: "stream-error",
-        message: `Stream source failed: ${String(error)}`,
-        error,
-      });
+      options.onStreamError?.(error);
       throw error;
     },
   );

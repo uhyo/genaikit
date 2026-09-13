@@ -128,7 +128,8 @@ streaming `TextDecoder` — the common `fetch().body` case),
 | `Pending`            | `ComponentType`                                      | renders `null` | Placeholder rendered at the frontier.                             |
 | `onUnknownComponent` | `"pending" \| "skip" \| "passthrough"`              | `"pending"`    | How to *render* an unresolved component tag.                      |
 | `mismatchedTag`      | `"autoclose" \| "ignore"`                           | `"autoclose"`  | How to *repair* a closing tag that doesn't match the open element. |
-| `onJsxError`         | `(event: JsxErrorEvent) => void`                    | —              | The single error channel: unified structured events, fired at parse time. |
+| `onJsxError`         | `(event: JsxErrorEvent) => void`                    | —              | Recoverable errors: unified structured JSX-level events, fired at parse time. |
+| `onStreamError`      | `(error: unknown) => void`                          | —              | Unrecoverable errors: the stream source failed (`done` rejects too). |
 
 The `components` map also acts as a **security allowlist** for untrusted
 AI-generated output — unknown components do not render by default.
@@ -162,10 +163,13 @@ AI output is frequently malformed, so the parser is **lenient by default**:
 - **Mismatched closing tags** mid-stream follow `mismatchedTag` (default
   `"autoclose"`).
 - **Unsupported expressions** render as nothing.
-- **Source read errors** reject `done`; the last good snapshot is always
-  preserved — errors never blank the UI.
+- **Source read errors** reject `done` and call `onStreamError`; the last good
+  snapshot is always preserved — errors never blank the UI.
 
-All of these are reported through the single `onJsxError` channel below.
+Two channels split the reporting by recoverability: every **recoverable**
+JSX-level error goes through the structured `onJsxError` channel below, while
+the one **unrecoverable** case — the stream source failing — goes through
+`onStreamError` (and rejects `done`).
 
 ### Instant, structured feedback: `onJsxError`
 
@@ -203,7 +207,6 @@ human-readable `message`:
 | `"unknown-component"`      | `tag`                       | A Capitalized/dotted tag fails `resolveComponent` / `components` resolution, at open time.       |
 | `"unsupported-expression"` | `expression`, `attribute?`  | A `{ }` expression falls outside the supported subset.                                           |
 | `"unclosed-tag"`           | `tag`                       | An element is still open when the stream ends (reported innermost first, then auto-closed).      |
-| `"stream-error"`           | `error`                     | The stream source failed (React adapter only); `done` rejects with the same error.               |
 
 ## License
 
