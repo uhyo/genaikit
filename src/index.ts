@@ -10,7 +10,7 @@
 
 import type { ComponentType, ReactNode } from "react";
 
-import type { MismatchBehavior, Node } from "./core";
+import type { JsxErrorEvent, MismatchBehavior, Node } from "./core";
 import { createParser } from "./core";
 import { createRenderer } from "./render";
 import type { JsxStreamSource } from "./stream";
@@ -25,6 +25,8 @@ export type {
   PendingNode,
   PropValue,
   MismatchBehavior,
+  JsxErrorEvent,
+  JsxErrorListener,
 } from "./core";
 export type { JsxStreamSource } from "./stream";
 export { Pending } from "./render";
@@ -45,6 +47,14 @@ export interface IncrementalJsxParserOptions {
   mismatchedTag?: MismatchBehavior;
   /** Called on a recoverable parse/stream/render error. */
   onError?: (error: unknown, info: { phase: string }) => void;
+  /**
+   * Unified structured JSX-level error events (mismatched/unclosed tags,
+   * unknown components, unsupported expressions), fired synchronously **as
+   * soon as each error is parsed** — before any render, and in every
+   * `mismatchedTag` / `onUnknownComponent` mode. Recovery is unaffected, so
+   * this is the channel to feed instant feedback to a stream producer.
+   */
+  onJsxError?: (event: JsxErrorEvent) => void;
 }
 
 /**
@@ -73,7 +83,16 @@ export function createIncrementalJsxParser(
   source: JsxStreamSource,
   options: IncrementalJsxParserOptions = {},
 ): IncrementalJsxParser {
-  const core = createParser({ mismatchedTag: options.mismatchedTag, onError: options.onError });
+  const core = createParser({
+    mismatchedTag: options.mismatchedTag,
+    onError: options.onError,
+    onJsxError: options.onJsxError,
+    // Only probe component resolution at parse time when someone listens, so
+    // `resolveComponent` sees no extra calls otherwise.
+    isKnownComponent: options.onJsxError
+      ? (tag) => (options.resolveComponent?.(tag) ?? options.components?.[tag]) != null
+      : undefined,
+  });
   const renderer = createRenderer(options);
 
   let lastTree: readonly Node[] | undefined;

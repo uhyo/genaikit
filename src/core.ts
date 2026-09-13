@@ -10,7 +10,14 @@ import { Tokenizer } from "./tokenizer";
 import { TreeBuilder } from "./tree-builder";
 import type { TreeBuilderOptions } from "./tree-builder";
 
-export type { MismatchBehavior, ErrorReporter, TreeBuilderOptions } from "./tree-builder";
+export type {
+  MismatchBehavior,
+  ErrorReporter,
+  TreeBuilderOptions,
+  JsxErrorEvent,
+  JsxErrorListener,
+} from "./tree-builder";
+export { isComponentName } from "./tree-builder";
 
 /** Options for the low-level {@link createParser}. */
 export type ParserOptions = TreeBuilderOptions;

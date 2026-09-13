@@ -17,7 +17,7 @@
 import { createElement, Fragment } from "react";
 import type { ComponentType, ReactNode } from "react";
 
-import { UNSUPPORTED_EXPRESSION } from "./core";
+import { isComponentName, UNSUPPORTED_EXPRESSION } from "./core";
 import type { ElementNode, Node } from "./core";
 
 /** How to handle a component tag that cannot be resolved. */
@@ -145,10 +145,4 @@ export function createRenderer(options: RenderOptions = {}): Renderer {
 
 function isNode(value: unknown): value is Node {
   return value !== null && typeof value === "object" && "kind" in value;
-}
-
-function isComponentName(tag: string): boolean {
-  const first = tag.charCodeAt(0);
-  // Uppercase A-Z (or a member expression like `Foo.Bar`) -> component.
-  return (first >= 65 && first <= 90) || tag.includes(".");
 }
