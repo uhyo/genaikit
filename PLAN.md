@@ -90,8 +90,8 @@ const parser = createIncrementalJsxParser(source, {
   components: { Card, Button },     // tag name -> React component
   Pending: MyPending,               // placeholder (default: renders null)
   resolveComponent,                 // optional: (name) => Component | undefined
-  onUnknownComponent: "pending",    // "pending" | "error" | "passthrough"
-  onError,                          // (err, info) => void
+  onUnknownComponent: "pending",    // "pending" | "skip" | "passthrough"
+  onJsxError,                       // (event: JsxErrorEvent) => void
 });
 
 parser.getSnapshot();               // => React.ReactNode (stable ref until change)
@@ -162,7 +162,8 @@ the React‑centric goal today.
 Pulls from the source in a background async loop, decodes bytes to text,
 forwards each chunk to the tokenizer, and after each processed chunk asks the
 store to notify subscribers. On stream end → `tokenizer.end()` + finalize. On
-read error → reject `done`, call `onError`, keep last good snapshot.
+read error → reject `done`, emit a `"stream-error"` event via `onJsxError`,
+keep last good snapshot.
 
 ### 4.2 Tokenizer (incremental, resumable)
 A character‑level state machine that consumes as much of the current buffer as
@@ -262,14 +263,17 @@ AI output is frequently malformed, so the parser is **lenient by default**:
 - **Mismatched / missing close tags:** on `end()` with elements still open,
   auto‑close them (keep best‑effort content) rather than throwing.
 - **Mismatched closing tag** mid‑stream (`</b>` closing an `<a>`): configurable
-  `mismatchedTag: "autoclose" | "ignore" | "error"` (default `"autoclose"`).
-- **Unsupported expression** (e.g. `{foo()}`): emit via `onError`, render the
-  offending expression as `Pending`/nothing, and continue. Configurable strict
-  mode can reject instead.
-- **Read errors from the source:** reject `done`, call `onError`, retain the
-  last good snapshot.
+  recovery `mismatchedTag: "autoclose" | "ignore"` (default `"autoclose"`).
+- **Unsupported expression** (e.g. `{foo()}`): render the offending expression
+  as nothing and continue.
+- **Read errors from the source:** reject `done`, retain the last good
+  snapshot.
 - The last successfully produced snapshot is always preserved; errors never
   blank the UI.
+- Every error above is additionally reported through the single structured
+  `onJsxError` event channel, synchronously at parse time and independent of
+  the recovery mode, so a stream producer (e.g. an agent) gets instant
+  feedback.
 
 On normal completion: drop the `Pending` frontier, freeze remaining open nodes,
 emit a final update, resolve `done`.

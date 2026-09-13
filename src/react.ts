@@ -36,7 +36,7 @@ export function useIncrementalJsx(
 
   useEffect(() => {
     // Avoid an unhandled rejection if the stream errors; errors are still
-    // surfaced through the `onError` option.
+    // surfaced through the `onJsxError` option ("stream-error").
     parser.done.catch(() => {});
     return () => parser.dispose();
   }, [parser]);

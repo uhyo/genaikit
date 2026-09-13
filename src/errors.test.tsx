@@ -12,12 +12,11 @@ function html(
   input: string,
   opts: {
     mismatchedTag?: MismatchBehavior;
-    onError?: (e: unknown, i: { phase: string }) => void;
     end?: boolean;
   } = {},
 ): string {
   const tk = new Tokenizer();
-  const tb = new TreeBuilder({ mismatchedTag: opts.mismatchedTag, onError: opts.onError });
+  const tb = new TreeBuilder({ mismatchedTag: opts.mismatchedTag });
   for (const token of tk.write(input)) tb.push(token);
   if (opts.end ?? true) {
     for (const token of tk.end()) tb.push(token);
@@ -48,13 +47,6 @@ describe("Error handling — mismatched closing tags", () => {
 
   it("ignore: non-matching close tags are dropped", () => {
     expect(html("<a>x</b>y", { mismatchedTag: "ignore" })).toBe("<a>xy</a>");
-  });
-
-  it("error: reports via onError and leaves the structure intact", () => {
-    const onError = vi.fn();
-    expect(html("<a>x</b>", { mismatchedTag: "error", onError })).toBe("<a>x</a>");
-    expect(onError).toHaveBeenCalledOnce();
-    expect(onError.mock.calls[0]![1]).toEqual({ phase: "parse" });
   });
 
   it("ignores a stray closing tag with nothing open", () => {
@@ -99,7 +91,7 @@ function collectEvents(
 
 describe("Unified JSX error events (onJsxError)", () => {
   it("reports a mismatched closing tag in every recovery mode", () => {
-    for (const mode of ["autoclose", "ignore", "error"] as const) {
+    for (const mode of ["autoclose", "ignore"] as const) {
       const events = collectEvents("<a>x</b>", { mismatchedTag: mode, end: false });
       expect(events).toEqual([
         {

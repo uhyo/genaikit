@@ -134,8 +134,8 @@ function StreamView({ params }: { params: RunParams }) {
     components: demoComponents,
     Pending: Shimmer,
     onUnknownComponent: "pending",
-    onError: (err) =>
-      setErrors((prev) => [...prev, { id: prev.length, message: errorMessage(err) }]),
+    onJsxError: (event) =>
+      setErrors((prev) => [...prev, { id: prev.length, message: event.message }]),
   });
 
   const done = streamed === params.text;
@@ -172,7 +172,7 @@ function StreamView({ params }: { params: RunParams }) {
 
       {errors.length > 0 && (
         <div className="errors">
-          <strong>onError ({errors.length}):</strong>
+          <strong>onJsxError ({errors.length}):</strong>
           <ul>
             {errors.map((err) => (
               <li key={err.id}>{err.message}</li>
@@ -182,8 +182,4 @@ function StreamView({ params }: { params: RunParams }) {
       )}
     </section>
   );
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

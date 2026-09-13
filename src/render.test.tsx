@@ -86,13 +86,9 @@ describe("React adapter — component resolution", () => {
     ).toBe(`<Nope>x</Nope>`);
   });
 
-  it("unknown component -> error calls onError and renders nothing", () => {
-    const onError = vi.fn();
-    expect(
-      toHtml(build("<Nope>x</Nope>", { end: true }), { onUnknownComponent: "error", onError }),
-    ).toBe("");
-    expect(onError).toHaveBeenCalledOnce();
-    expect(onError.mock.calls[0]![1]).toEqual({ phase: "render" });
+  it("unknown component -> skip renders nothing", () => {
+    // The unresolved tag itself is reported at parse time via onJsxError.
+    expect(toHtml(build("<Nope>x</Nope>", { end: true }), { onUnknownComponent: "skip" })).toBe("");
   });
 });
 

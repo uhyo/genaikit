@@ -139,17 +139,14 @@ describe("React adapter — expressions in props", () => {
 });
 
 describe("React adapter — unsupported expressions", () => {
-  it("reports via onError and renders nothing (children)", () => {
-    const onError = vi.fn();
-    expect(toHtml("<p>{foo()}</p>", { onError })).toBe("<p></p>");
-    expect(onError).toHaveBeenCalledOnce();
-    expect(onError.mock.calls[0]![1]).toEqual({ phase: "expression" });
+  // The errors themselves are reported at parse time via onJsxError
+  // ("unsupported-expression"); rendering just degrades silently.
+  it("renders nothing (children)", () => {
+    expect(toHtml("<p>{foo()}</p>")).toBe("<p></p>");
   });
 
-  it("reports via onError and drops the prop (attributes)", () => {
-    const onError = vi.fn();
-    expect(toHtml(`<input value={a + b}/>`, { onError })).toBe(`<input/>`);
-    expect(onError).toHaveBeenCalledOnce();
+  it("drops the prop (attributes)", () => {
+    expect(toHtml(`<input value={a + b}/>`)).toBe(`<input/>`);
   });
 });
 
