@@ -187,19 +187,19 @@ away. `onJsxError` is the single, unified error channel for exactly that:
   stream is split.
 
 ```ts
-import type { JsxErrorEvent } from "jsx-incremental-parser";
+import { formatJsxError, type JsxErrorEvent } from "jsx-incremental-parser";
 
 const parser = createIncrementalJsxParser(stream, {
   components: { Card, Button },
   onJsxError: (event: JsxErrorEvent) => {
     // Feed it straight back to the generating agent:
-    agent.report(event.message);
+    agent.report(formatJsxError(event));
   },
 });
 ```
 
 `JsxErrorEvent` is a discriminated union on `kind`; every variant carries a
-human-readable `message`:
+human-readable `message` and a `location`:
 
 | `kind`                     | Extra fields                | Emitted when                                                                                     |
 | -------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------ |
@@ -207,6 +207,36 @@ human-readable `message`:
 | `"unknown-component"`      | `tag`                       | A Capitalized/dotted tag fails `resolveComponent` / `components` resolution, at open time.       |
 | `"unsupported-expression"` | `expression`, `attribute?`  | A `{ }` expression falls outside the supported subset.                                           |
 | `"unclosed-tag"`           | `tag`                       | An element is still open when the stream ends (reported innermost first, then auto-closed).      |
+
+### Error locations: `location` and `formatJsxError`
+
+`location` is a `SourceLocation` pointing at the offending construct — the `<`
+of a mismatched/unknown/unclosed tag, the `{` of an unsupported expression:
+
+```ts
+interface SourceLocation {
+  line: number; // 1-based
+  column: number; // 1-based, UTF-16 code units
+  offset: number; // 0-based from the start of the stream, UTF-16 code units
+  lineText: string; // the offending line, as streamed so far
+}
+```
+
+Because the input is a stream, `lineText` holds the line as far as it had
+arrived when the error was captured — for the common single-line case that is
+the whole construct. The exported `formatJsxError(event)` renders the message,
+position, and a caret code frame in one string, ready to log or to feed back
+to the agent producing the stream:
+
+```text
+Mismatched closing tag </b>; expected </a> (line 2, column 8)
+
+  2 |   hello</b>
+    |        ^
+```
+
+One caveat: errors *inside* a nested JSX expression (`{<b>…</b>}` is buffered
+and parsed on its own) are reported at the enclosing `{`.
 
 ## License
 

@@ -27,7 +27,9 @@ export type {
   MismatchBehavior,
   JsxErrorEvent,
   JsxErrorListener,
+  SourceLocation,
 } from "./core";
+export { formatJsxError } from "./core";
 export type { JsxStreamSource } from "./stream";
 export { Pending } from "./render";
 export type { UnknownComponentBehavior } from "./render";
@@ -49,7 +51,9 @@ export interface IncrementalJsxParserOptions {
    * expressions), fired synchronously **as soon as each error is parsed** —
    * before any render, and in every `mismatchedTag` / `onUnknownComponent`
    * mode. Recovery is unaffected, so this is the channel to feed instant
-   * feedback to a stream producer.
+   * feedback to a stream producer. Each event carries a `location`
+   * (line/column + the offending line's text); `formatJsxError` renders it
+   * as a ready-to-log report.
    */
   onJsxError?: (event: JsxErrorEvent) => void;
   /**

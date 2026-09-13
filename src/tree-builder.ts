@@ -24,7 +24,7 @@ import type {
 } from "./core";
 import { UNSUPPORTED_EXPRESSION } from "./core";
 import { parseExpression, type ParsedExpression } from "./expression";
-import type { AttrValue, Partial, Token } from "./tokenizer";
+import type { AttrValue, Partial, SourceLocation, Token } from "./tokenizer";
 import { Tokenizer } from "./tokenizer";
 
 /** A node that can still receive children (sits on the open stack). */
@@ -68,6 +68,8 @@ const PENDING_ID = -1;
 interface Building {
   name: string;
   props: Record<string, PropValue>;
+  /** Where the opening tag starts, for error events about this element. */
+  loc: SourceLocation;
 }
 
 export class TreeBuilder {
@@ -86,6 +88,8 @@ export class TreeBuilder {
   private readonly roots: Node[] = [];
   /** Currently open nodes, outermost first; the last is the frontier's parent. */
   private readonly openStack: OpenNode[] = [];
+  /** Opening-tag location of each entry in {@link openStack} (kept in sync). */
+  private readonly openLocs: SourceLocation[] = [];
   /** The opening tag currently being assembled, if any. */
   private building: Building | null = null;
   /** Stable id reserved for the in-progress text run (shared with its commit). */
@@ -96,7 +100,7 @@ export class TreeBuilder {
   push(token: Token): void {
     switch (token.type) {
       case "openTagStart": {
-        this.building = { name: token.name, props: {} };
+        this.building = { name: token.name, props: {}, loc: token.loc };
         return;
       }
       case "attribute": {
@@ -106,15 +110,19 @@ export class TreeBuilder {
         return;
       }
       case "openTagEnd": {
+        this.refreshBuildingLine(token.loc);
+        const loc = this.building?.loc;
         const node = this.createOpenNode();
-        if (node) {
+        if (node && loc) {
           this.appendChild(node);
           this.openStack.push(node);
+          this.openLocs.push(loc);
         }
         this.building = null;
         return;
       }
       case "selfClose": {
+        this.refreshBuildingLine(token.loc);
         const node = this.createOpenNode();
         if (node) {
           node.status = "closed";
@@ -125,7 +133,7 @@ export class TreeBuilder {
         return;
       }
       case "closeTag": {
-        this.closeTag(token.name);
+        this.closeTag(token.name, token.loc);
         return;
       }
       case "text": {
@@ -136,11 +144,27 @@ export class TreeBuilder {
         return;
       }
       case "expr": {
-        const value = this.parseExpr(token.raw);
+        const value = this.parseExpr(token.raw, token.loc);
         const node: ExpressionNode = { kind: "expression", id: this.nextId++, value };
         this.appendChild(freeze(node));
         return;
       }
+    }
+  }
+
+  /**
+   * When the `>` / `/>` ends the tag on the same line it started, the line has
+   * streamed further since `openTagStart` was captured — adopt the fuller line
+   * text so error frames about this element show the whole opening tag.
+   */
+  private refreshBuildingLine(end: SourceLocation): void {
+    const building = this.building;
+    if (
+      building &&
+      end.line === building.loc.line &&
+      end.lineText.length > building.loc.lineText.length
+    ) {
+      building.loc = { ...building.loc, lineText: end.lineText };
     }
   }
 
@@ -152,13 +176,13 @@ export class TreeBuilder {
         return true;
       case "expression":
         // The sentinel for an unsupported expression is detected by the adapter.
-        return this.parseExpr(value.raw, name) as PropValue;
+        return this.parseExpr(value.raw, value.loc, name) as PropValue;
     }
   }
 
   /** Parse a `{ }` expression, reporting an unsupported one as it is detected. */
-  private parseExpr(raw: string, attribute?: string): ParsedExpression {
-    const value = parseExpression(raw, (src) => this.parseJsx(src));
+  private parseExpr(raw: string, loc: SourceLocation, attribute?: string): ParsedExpression {
+    const value = parseExpression(raw, (src) => this.parseJsx(src, loc));
     if (value === UNSUPPORTED_EXPRESSION && this.onJsxError) {
       this.onJsxError(
         attribute === undefined
@@ -166,12 +190,14 @@ export class TreeBuilder {
               kind: "unsupported-expression",
               message: `Unsupported expression: {${raw}}`,
               expression: raw,
+              location: loc,
             }
           : {
               kind: "unsupported-expression",
               message: `Unsupported expression in attribute "${attribute}": {${raw}}`,
               expression: raw,
               attribute,
+              location: loc,
             },
       );
     }
@@ -179,12 +205,15 @@ export class TreeBuilder {
   }
 
   /** Parse a nested JSX expression by running a fresh, self-contained parse. */
-  private parseJsx(src: string): Node | undefined {
+  private parseJsx(src: string, loc: SourceLocation): Node | undefined {
     const tokenizer = new Tokenizer();
+    const onJsxError = this.onJsxError;
     // Nested JSX keeps the default recovery (unchanged behavior), but its
-    // errors still surface through the unified event channel.
+    // errors still surface through the unified event channel. Positions inside
+    // the buffered expression are relative to its own source, so nested events
+    // are reported at the enclosing `{` in the outer stream instead.
     const builder = new TreeBuilder({
-      onJsxError: this.onJsxError,
+      onJsxError: onJsxError && ((event) => onJsxError({ ...event, location: loc })),
       isKnownComponent: this.isKnownComponent,
     });
     for (const token of tokenizer.write(src)) builder.push(token);
@@ -217,6 +246,7 @@ export class TreeBuilder {
             ? "Unclosed fragment <> at end of input"
             : `Unclosed tag <${name}> at end of input`,
         tag: name,
+        location: this.openLocs[this.openLocs.length - 1]!,
       });
       this.closeTop();
     }
@@ -261,6 +291,7 @@ export class TreeBuilder {
         kind: "unknown-component",
         message: `Unknown component <${building.name}>`,
         tag: building.name,
+        location: building.loc,
       });
     }
     return {
@@ -277,7 +308,7 @@ export class TreeBuilder {
    * Handle a closing tag, honoring the {@link MismatchBehavior} when it does not
    * match the innermost open element (PLAN.md §7).
    */
-  private closeTag(name: string): void {
+  private closeTag(name: string, loc: SourceLocation): void {
     const stack = this.openStack;
     if (stack.length === 0) {
       // Stray close with nothing open: report it, then ignore it (unchanged).
@@ -286,6 +317,7 @@ export class TreeBuilder {
         message: `Stray closing tag </${name}> with nothing open`,
         tag: name,
         expected: null,
+        location: loc,
       });
       return;
     }
@@ -304,6 +336,7 @@ export class TreeBuilder {
       message: `Mismatched closing tag </${name}>; expected </${expected}>`,
       tag: name,
       expected,
+      location: loc,
     });
     switch (this.mismatchedTag) {
       case "ignore":
@@ -322,6 +355,7 @@ export class TreeBuilder {
   /** Pop and freeze the innermost open node. */
   private closeTop(): void {
     const node = this.openStack.pop();
+    this.openLocs.pop();
     if (!node) return;
     node.status = "closed";
     freeze(node);
