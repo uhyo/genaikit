@@ -53,6 +53,15 @@ export type JsxErrorEvent =
       location: SourceLocation;
     }
   | {
+      /** A `{ }` variable reference whose root name is not a known variable. */
+      kind: "unknown-variable";
+      message: string;
+      /** The unresolved root identifier. */
+      name: string;
+      /** Where the expression starts (its `{`). */
+      location: SourceLocation;
+    }
+  | {
       /** A `{ }` expression outside the supported subset. */
       kind: "unsupported-expression";
       message: string;
@@ -123,7 +132,13 @@ export function formatJsxError(event: JsxErrorEvent): string {
 export type ParserOptions = TreeBuilderOptions;
 
 /** A node in the renderer-independent AST. */
-export type Node = ElementNode | FragmentNode | TextNode | ExpressionNode | PendingNode;
+export type Node =
+  | ElementNode
+  | FragmentNode
+  | TextNode
+  | ExpressionNode
+  | VariableNode
+  | PendingNode;
 
 export interface ElementNode {
   kind: "element";
@@ -151,6 +166,20 @@ export interface ExpressionNode {
   kind: "expression";
   id: number;
   value: unknown;
+}
+
+/**
+ * A variable reference expression (`{foo}` / `{foo.bar.baz}`). The core only
+ * records the dot-notation path; resolution happens at render time against a
+ * consumer-supplied `variables` map (mirroring how component tags resolve
+ * through `components`). It appears as an {@link ExpressionNode} value (child
+ * position) or directly as a {@link PropValue} (attribute position).
+ */
+export interface VariableNode {
+  kind: "variable";
+  id: number;
+  /** Root identifier followed by its member accesses (`a.b.c` → `["a","b","c"]`). */
+  path: readonly string[];
 }
 
 /**

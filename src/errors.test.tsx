@@ -148,6 +148,23 @@ describe("Unified JSX error events (onJsxError)", () => {
     expect(collectEvents("<div><span/></div>", { isKnownComponent: () => false })).toEqual([]);
   });
 
+  it("reports an unknown variable at parse time via isKnownVariable", () => {
+    const events = collectEvents("<p>{known}{user.name}</p>", {
+      isKnownVariable: (name) => name === "known",
+    });
+    expect(events).toMatchObject([
+      {
+        kind: "unknown-variable",
+        message: 'Unknown variable "user" in {user.name}',
+        name: "user",
+      },
+    ]);
+  });
+
+  it("stays silent on variable references without an isKnownVariable probe", () => {
+    expect(collectEvents("<p>{user.name}</p>")).toEqual([]);
+  });
+
   it("reports an unsupported child expression with its raw source", () => {
     expect(collectEvents("<p>{foo()}</p>")).toMatchObject([
       {
@@ -370,6 +387,18 @@ describe("Unified JSX error events — React adapter wiring", () => {
     await parser.done;
     expect(events).toMatchObject([
       { kind: "unknown-component", message: "Unknown component <C>", tag: "C" },
+    ]);
+  });
+
+  it("reports a variable missing from the variables map at parse time", async () => {
+    const events: JsxErrorEvent[] = [];
+    const parser = createIncrementalJsxParser(streamOf("<p>{name}{na", "me.x}{nope}</p>"), {
+      variables: { name: "uhyo" },
+      onJsxError: (e) => events.push(e),
+    });
+    await parser.done;
+    expect(events).toMatchObject([
+      { kind: "unknown-variable", message: 'Unknown variable "nope" in {nope}', name: "nope" },
     ]);
   });
 

@@ -86,6 +86,41 @@ describe("parseExpression — literals", () => {
   });
 });
 
+describe("parseExpression — variable references", () => {
+  const variableNode = (path: readonly string[]): Node => ({ kind: "variable", id: 0, path });
+
+  it("delegates identifiers and dot paths to the parseVariable callback", () => {
+    const parseVariable = vi.fn(variableNode);
+    expect(parseExpression("user", noJsx, parseVariable)).toMatchObject({ kind: "variable" });
+    expect(parseVariable).toHaveBeenLastCalledWith(["user"]);
+    parseExpression("user.name.first", noJsx, parseVariable);
+    expect(parseVariable).toHaveBeenLastCalledWith(["user", "name", "first"]);
+    parseExpression(" a . b ", noJsx, parseVariable);
+    expect(parseVariable).toHaveBeenLastCalledWith(["a", "b"]);
+    parseExpression("$_0.x1", noJsx, parseVariable);
+    expect(parseVariable).toHaveBeenLastCalledWith(["$_0", "x1"]);
+  });
+
+  it("is unsupported without a parseVariable callback", () => {
+    expect(parseExpression("user", noJsx)).toBe(UNSUPPORTED_EXPRESSION);
+  });
+
+  it("keeps keyword literals ahead of variable parsing", () => {
+    const parseVariable = vi.fn(variableNode);
+    expect(parseExpression("true", noJsx, parseVariable)).toBe(true);
+    expect(parseExpression("null", noJsx, parseVariable)).toBe(null);
+    expect(parseVariable).not.toHaveBeenCalled();
+  });
+
+  it("rejects anything beyond dot notation", () => {
+    const parseVariable = vi.fn(variableNode);
+    for (const src of ["a-b", "a.b()", "foo.", ".foo", "a[0]", "1abc", "a?.b", "a. .b"]) {
+      expect(parseExpression(src, noJsx, parseVariable)).toBe(UNSUPPORTED_EXPRESSION);
+    }
+    expect(parseVariable).not.toHaveBeenCalled();
+  });
+});
+
 describe("Tokenizer — expression containers", () => {
   it("emits a child expr token with raw inner source", () => {
     expect(tokenize("<p>{ 42 }</p>")).toContainEqual({ type: "expr", raw: " 42 " });
@@ -142,6 +177,43 @@ describe("React adapter — expressions in props", () => {
     expect(toHtml(`<Box label={<b>hi</b>}/>`, { components: { Box } })).toBe(
       `<div class="box"><b>hi</b></div>`,
     );
+  });
+});
+
+describe("React adapter — variable references", () => {
+  const variables = {
+    name: "uhyo",
+    count: 3,
+    user: { profile: { city: "Tokyo" }, none: null },
+    home: "/index",
+  };
+
+  it("renders a bare identifier from the variables map", () => {
+    expect(toHtml("<p>{name}</p>", { variables })).toBe("<p>uhyo</p>");
+    expect(toHtml("<p>{count} items</p>", { variables })).toBe("<p>3 items</p>");
+  });
+
+  it("renders dot-notation member access", () => {
+    expect(toHtml("<p>{user.profile.city}</p>", { variables })).toBe("<p>Tokyo</p>");
+  });
+
+  it("renders variable references in props", () => {
+    expect(toHtml("<a href={home}>x</a>", { variables })).toBe(`<a href="/index">x</a>`);
+    expect(toHtml("<Box label={user.profile.city}/>", { variables, components: { Box } })).toBe(
+      `<div class="box">Tokyo</div>`,
+    );
+  });
+
+  it("renders an unknown root variable as nothing", () => {
+    expect(toHtml("<p>{nope}</p>", { variables })).toBe("<p></p>");
+    expect(toHtml("<p>{nope.deep}</p>", { variables })).toBe("<p></p>");
+    expect(toHtml("<p>{name}</p>")).toBe("<p></p>"); // no variables map at all
+  });
+
+  it("resolves a missing or nullish member to nothing (null-safe walk)", () => {
+    expect(toHtml("<p>{user.missing}</p>", { variables })).toBe("<p></p>");
+    expect(toHtml("<p>{user.none.deep}</p>", { variables })).toBe("<p></p>");
+    expect(toHtml("<p>{user.missing.deep}</p>", { variables })).toBe("<p></p>");
   });
 });
 

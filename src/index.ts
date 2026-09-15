@@ -22,6 +22,7 @@ export type {
   FragmentNode,
   TextNode,
   ExpressionNode,
+  VariableNode,
   PendingNode,
   PropValue,
   MismatchBehavior,
@@ -37,6 +38,13 @@ export type { UnknownComponentBehavior } from "./render";
 export interface IncrementalJsxParserOptions {
   /** Tag name -> React component map for capitalized JSX names. */
   components?: Record<string, ComponentType<never>>;
+  /**
+   * Variable name -> value, for `{name}` / `{name.member}` expressions
+   * (dot notation only). Like `components`, this is the allowlist: a
+   * reference whose root name is not in the map renders as nothing and is
+   * reported through `onJsxError` (`kind: "unknown-variable"`).
+   */
+  variables?: Record<string, unknown>;
   /** Placeholder rendered at the streaming frontier (default: renders null). */
   Pending?: ComponentType<unknown>;
   /** Optional resolver, consulted before the `components` map. */
@@ -98,6 +106,9 @@ export function createIncrementalJsxParser(
     // `resolveComponent` sees no extra calls otherwise.
     isKnownComponent: options.onJsxError
       ? (tag) => (options.resolveComponent?.(tag) ?? options.components?.[tag]) != null
+      : undefined,
+    isKnownVariable: options.onJsxError
+      ? (name) => options.variables != null && name in options.variables
       : undefined,
   });
   const renderer = createRenderer(options);

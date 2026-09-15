@@ -21,6 +21,7 @@ import type {
   PendingNode,
   PropValue,
   TextNode,
+  VariableNode,
 } from "./core";
 import { UNSUPPORTED_EXPRESSION } from "./core";
 import { parseExpression, type ParsedExpression } from "./expression";
@@ -59,6 +60,12 @@ export interface TreeBuilderOptions {
    * `"unknown-component"` event. Recovery/rendering is unaffected.
    */
   isKnownComponent?: ((tag: string) => boolean) | undefined;
+  /**
+   * Optional resolver check: when provided, a variable reference expression
+   * (`{foo}` / `{foo.bar}`) whose root name it does not recognize emits an
+   * `"unknown-variable"` event. Recovery/rendering is unaffected.
+   */
+  isKnownVariable?: ((name: string) => boolean) | undefined;
 }
 
 /** The single frontier marker has a fixed key (only ever one exists at a time). */
@@ -76,11 +83,13 @@ export class TreeBuilder {
   private readonly mismatchedTag: MismatchBehavior;
   private readonly onJsxError: JsxErrorListener | undefined;
   private readonly isKnownComponent: ((tag: string) => boolean) | undefined;
+  private readonly isKnownVariable: ((name: string) => boolean) | undefined;
 
   constructor(options: TreeBuilderOptions = {}) {
     this.mismatchedTag = options.mismatchedTag ?? "autoclose";
     this.onJsxError = options.onJsxError;
     this.isKnownComponent = options.isKnownComponent;
+    this.isKnownVariable = options.isKnownVariable;
   }
 
   private nextId = 0;
@@ -182,7 +191,11 @@ export class TreeBuilder {
 
   /** Parse a `{ }` expression, reporting an unsupported one as it is detected. */
   private parseExpr(raw: string, loc: SourceLocation, attribute?: string): ParsedExpression {
-    const value = parseExpression(raw, (src) => this.parseJsx(src, loc));
+    const value = parseExpression(
+      raw,
+      (src) => this.parseJsx(src, loc),
+      (path) => this.createVariable(path, loc),
+    );
     if (value === UNSUPPORTED_EXPRESSION && this.onJsxError) {
       this.onJsxError(
         attribute === undefined
@@ -204,6 +217,21 @@ export class TreeBuilder {
     return value;
   }
 
+  /** Materialize a variable reference node, reporting an unknown root name. */
+  private createVariable(path: readonly string[], loc: SourceLocation): VariableNode {
+    const name = path[0]!;
+    if (this.onJsxError && this.isKnownVariable && !this.isKnownVariable(name)) {
+      this.onJsxError({
+        kind: "unknown-variable",
+        message: `Unknown variable "${name}" in {${path.join(".")}}`,
+        name,
+        location: loc,
+      });
+    }
+    const node: VariableNode = { kind: "variable", id: this.nextId++, path: Object.freeze(path) };
+    return freeze(node);
+  }
+
   /** Parse a nested JSX expression by running a fresh, self-contained parse. */
   private parseJsx(src: string, loc: SourceLocation): Node | undefined {
     const tokenizer = new Tokenizer();
@@ -215,6 +243,7 @@ export class TreeBuilder {
     const builder = new TreeBuilder({
       onJsxError: onJsxError && ((event) => onJsxError({ ...event, location: loc })),
       isKnownComponent: this.isKnownComponent,
+      isKnownVariable: this.isKnownVariable,
     });
     for (const token of tokenizer.write(src)) builder.push(token);
     for (const token of tokenizer.end()) builder.push(token);

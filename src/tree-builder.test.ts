@@ -37,6 +37,8 @@ function serNode(node: Node): string {
     }
     case "expression":
       return `{${JSON.stringify(node.value)}}`;
+    case "variable":
+      return `{${node.path.join(".")}}`;
   }
 }
 

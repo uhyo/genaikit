@@ -68,9 +68,13 @@ The parser is **not** a JavaScript parser. It recognizes a small JSX subset:
   (`` `…` ``) — optional, see open questions,
 - number literals (`42`, `3.14`, `-1`, `1e3`),
 - `true`, `false`, `null`, `undefined`,
+- a **predefined variable** reference: a bare identifier (`user`) or dot‑notation
+  member access (`user.name.first`), resolved at render time against a
+  user‑supplied `variables` map — mirroring how component tags resolve through
+  `components` (unknown root names report `"unknown-variable"` per §7),
 - a nested JSX element/fragment.
 
-Explicitly **out of scope**: variables/identifiers, member access, function
+Explicitly **out of scope**: computed/bracket member access, function
 calls, arithmetic, ternaries, object/array literals, spread (`{...x}`), arrow
 functions. Encountering these is a parse error handled per §7.
 
