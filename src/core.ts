@@ -14,6 +14,8 @@ import type { TreeBuilderOptions } from "./tree-builder";
 export type { MismatchBehavior, TreeBuilderOptions } from "./tree-builder";
 export { isComponentName } from "./tree-builder";
 export type { SourceLocation } from "./tokenizer";
+export { checkHostProp, formatPromptContract, isElementAllowed } from "./schema";
+export type { ElementAllowlist, PromptContractOptions, SchemaOptions } from "./schema";
 
 /**
  * A structured, **recoverable** JSX-level error event (PLAN.md §7), emitted
@@ -81,6 +83,31 @@ export type JsxErrorEvent =
       /** Name of the element left open (`""` for a fragment). */
       tag: string;
       /** Where the unclosed element was opened (its `<`). */
+      location: SourceLocation;
+    }
+  | {
+      /** An intrinsic (lowercase) tag rejected by the element allowlist. */
+      kind: "disallowed-element";
+      message: string;
+      /** The rejected tag name. */
+      tag: string;
+      /** Where the rejected tag starts (its `<`). */
+      location: SourceLocation;
+    }
+  | {
+      /**
+       * A prop on an intrinsic element rejected by the schema (per-tag
+       * allowlist or the built-in host prop rules); the renderer drops it.
+       */
+      kind: "invalid-prop";
+      message: string;
+      /** Tag the prop appeared on. */
+      tag: string;
+      /** The rejected prop name. */
+      prop: string;
+      /** Why it was rejected (as returned by `checkHostProp`). */
+      reason: string;
+      /** Where the owning element's opening tag starts (its `<`). */
       location: SourceLocation;
     };
 

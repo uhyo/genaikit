@@ -20,6 +20,8 @@ import type { ComponentType, ReactNode } from "react";
 
 import { isComponentName, resolveVariablePath, UNSUPPORTED_EXPRESSION } from "./core";
 import type { ElementNode, Node, VariableNode } from "./core";
+import { checkHostProp, isElementAllowed } from "./schema";
+import type { ElementAllowlist } from "./schema";
 
 /**
  * How to render a component tag that cannot be resolved. Purely a rendering
@@ -27,6 +29,16 @@ import type { ElementNode, Node, VariableNode } from "./core";
  * `onJsxError` (`kind: "unknown-component"`) regardless of the mode.
  */
 export type UnknownComponentBehavior = "pending" | "skip" | "passthrough";
+
+/**
+ * How to render an intrinsic tag rejected by the `elements` allowlist. Purely
+ * a rendering strategy — the rejection is reported at parse time through
+ * `onJsxError` (`kind: "disallowed-element"`) regardless of the mode. The
+ * default is `"skip"`: unlike an unknown component (which may simply not be
+ * registered yet), a disallowed element is a policy rejection, and a
+ * permanent `Pending` placeholder would read as "still loading".
+ */
+export type DisallowedElementBehavior = "skip" | "pending";
 
 export interface RenderOptions {
   /** Tag name -> React component, for Capitalized JSX names. */
@@ -39,6 +51,10 @@ export interface RenderOptions {
   resolveComponent?: ((name: string) => ComponentType<never> | undefined) | undefined;
   /** Rendering of an unresolved component tag (default: "pending"). */
   onUnknownComponent?: UnknownComponentBehavior | undefined;
+  /** Allowlist of intrinsic tags; absent = every intrinsic tag renders. */
+  elements?: ElementAllowlist | undefined;
+  /** Rendering of a disallowed intrinsic tag (default: "skip"). */
+  onDisallowedElement?: DisallowedElementBehavior | undefined;
 }
 
 /** Default frontier placeholder: an invisible node. */
@@ -107,6 +123,9 @@ export function createRenderer(options: RenderOptions = {}): Renderer {
 
     const props: Record<string, unknown> = { key: node.id };
     for (const [name, value] of Object.entries(node.props)) {
+      // A schema-rejected host prop is dropped (already reported at parse time
+      // via "invalid-prop"); left in, React would throw on e.g. string styles.
+      if (checkHostProp(node.tag, name, value, options) !== null) continue;
       props[name] = renderValue(value);
     }
     const children = node.children.map(renderNode);
@@ -142,6 +161,12 @@ export function createRenderer(options: RenderOptions = {}): Renderer {
 
   function resolveType(tag: string): Resolved {
     if (!isComponentName(tag)) {
+      if (!isElementAllowed(options.elements, tag)) {
+        // Already reported at parse time (onJsxError "disallowed-element").
+        return (options.onDisallowedElement ?? "skip") === "pending"
+          ? { kind: "pending" }
+          : { kind: "skip" };
+      }
       return { kind: "host", tag };
     }
     const resolved = options.resolveComponent?.(tag) ?? options.components?.[tag];

@@ -68,6 +68,19 @@ export interface TreeBuilderOptions {
    * Recovery/rendering is unaffected.
    */
   isKnownVariable?: ((path: readonly string[]) => boolean) | undefined;
+  /**
+   * Optional allowlist check: when provided, opening an intrinsic
+   * (non-component) tag it rejects emits a `"disallowed-element"` event.
+   * Recovery/rendering is unaffected (see `isElementAllowed`).
+   */
+  isAllowedElement?: ((tag: string) => boolean) | undefined;
+  /**
+   * Optional prop check, probed for every prop when the opening tag
+   * completes: a non-`null` return is the human-readable rejection reason and
+   * emits an `"invalid-prop"` event. Recovery/rendering is unaffected — the
+   * renderer applies the same check to drop the prop (see `checkHostProp`).
+   */
+  checkProp?: ((tag: string, prop: string, value: PropValue) => string | null) | undefined;
 }
 
 /** The single frontier marker has a fixed key (only ever one exists at a time). */
@@ -86,12 +99,18 @@ export class TreeBuilder {
   private readonly onJsxError: JsxErrorListener | undefined;
   private readonly isKnownComponent: ((tag: string) => boolean) | undefined;
   private readonly isKnownVariable: ((path: readonly string[]) => boolean) | undefined;
+  private readonly isAllowedElement: ((tag: string) => boolean) | undefined;
+  private readonly checkProp:
+    | ((tag: string, prop: string, value: PropValue) => string | null)
+    | undefined;
 
   constructor(options: TreeBuilderOptions = {}) {
     this.mismatchedTag = options.mismatchedTag ?? "autoclose";
     this.onJsxError = options.onJsxError;
     this.isKnownComponent = options.isKnownComponent;
     this.isKnownVariable = options.isKnownVariable;
+    this.isAllowedElement = options.isAllowedElement;
+    this.checkProp = options.checkProp;
   }
 
   private nextId = 0;
@@ -247,6 +266,8 @@ export class TreeBuilder {
       onJsxError: onJsxError && ((event) => onJsxError({ ...event, location: loc })),
       isKnownComponent: this.isKnownComponent,
       isKnownVariable: this.isKnownVariable,
+      isAllowedElement: this.isAllowedElement,
+      checkProp: this.checkProp,
     });
     for (const token of tokenizer.write(src)) builder.push(token);
     for (const token of tokenizer.end()) builder.push(token);
@@ -325,6 +346,34 @@ export class TreeBuilder {
         tag: building.name,
         location: building.loc,
       });
+    }
+    if (
+      this.onJsxError &&
+      this.isAllowedElement &&
+      !isComponentName(building.name) &&
+      !this.isAllowedElement(building.name)
+    ) {
+      this.onJsxError({
+        kind: "disallowed-element",
+        message: `Disallowed element <${building.name}>`,
+        tag: building.name,
+        location: building.loc,
+      });
+    }
+    if (this.onJsxError && this.checkProp) {
+      for (const [prop, value] of Object.entries(building.props)) {
+        const reason = this.checkProp(building.name, prop, value);
+        if (reason !== null) {
+          this.onJsxError({
+            kind: "invalid-prop",
+            message: `Invalid prop "${prop}" on <${building.name}>: ${reason}`,
+            tag: building.name,
+            prop,
+            reason,
+            location: building.loc,
+          });
+        }
+      }
     }
     return {
       kind: "element",
