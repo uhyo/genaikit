@@ -5,6 +5,7 @@
  *  - intrinsic tag (lowercase) -> string type; component tag (Capitalized) ->
  *    resolved through `components` / `resolveComponent`, else handled per
  *    `onUnknownComponent`; fragment -> `React.Fragment`.
+ *  - a variable reference -> resolved through `variables` (null-safe dot walk).
  *  - the frontier {@link PendingNode} -> the `Pending` component.
  *  - **Memoization**: every *closed* (frozen) node caches its created React
  *    element keyed by node identity, so between snapshots only the open path and
@@ -17,8 +18,8 @@
 import { createElement, Fragment } from "react";
 import type { ComponentType, ReactNode } from "react";
 
-import { isComponentName, UNSUPPORTED_EXPRESSION } from "./core";
-import type { ElementNode, Node } from "./core";
+import { isComponentName, resolveVariablePath, UNSUPPORTED_EXPRESSION } from "./core";
+import type { ElementNode, Node, VariableNode } from "./core";
 
 /**
  * How to render a component tag that cannot be resolved. Purely a rendering
@@ -30,6 +31,8 @@ export type UnknownComponentBehavior = "pending" | "skip" | "passthrough";
 export interface RenderOptions {
   /** Tag name -> React component, for Capitalized JSX names. */
   components?: Record<string, ComponentType<never>> | undefined;
+  /** Variable name -> value, for `{name}` / `{name.member}` expressions. */
+  variables?: Record<string, unknown> | undefined;
   /** Placeholder rendered at the frontier (default: {@link Pending}). */
   Pending?: ComponentType<unknown> | undefined;
   /** Optional resolver, consulted before the `components` map. */
@@ -86,6 +89,8 @@ export function createRenderer(options: RenderOptions = {}): Renderer {
         return createElement(Fragment, { key: node.id }, ...node.children.map(renderNode));
       case "element":
         return createElementNode(node);
+      case "variable":
+        return resolveVariable(node) as ReactNode;
       case "expression": {
         const value = renderValue(node.value);
         // A nested JSX value is re-keyed via a wrapper so the parent array key is
@@ -121,6 +126,18 @@ export function createRenderer(options: RenderOptions = {}): Renderer {
       return renderNode(value);
     }
     return value as ReactNode;
+  }
+
+  /**
+   * Walk a variable reference's dot path through the `variables` map. An
+   * unresolvable path (already reported at parse time via "unknown-variable")
+   * renders as `undefined` — same lookup semantics as the parse-time check.
+   */
+  function resolveVariable(node: VariableNode): unknown {
+    const variables = options.variables;
+    if (!variables) return undefined;
+    const result = resolveVariablePath(variables, node.path);
+    return result.found ? result.value : undefined;
   }
 
   function resolveType(tag: string): Resolved {

@@ -148,6 +148,48 @@ describe("Unified JSX error events (onJsxError)", () => {
     expect(collectEvents("<div><span/></div>", { isKnownComponent: () => false })).toEqual([]);
   });
 
+  it("reports an unknown variable at parse time via isKnownVariable", () => {
+    const events = collectEvents("<p>{known}{user.name}</p>", {
+      isKnownVariable: (path) => path[0] === "known",
+    });
+    expect(events).toMatchObject([
+      {
+        kind: "unknown-variable",
+        message: "Unknown variable reference {user.name}",
+        name: "user",
+        path: ["user", "name"],
+      },
+    ]);
+  });
+
+  it("hands isKnownVariable the full dot path for nested validation", () => {
+    const paths: (readonly string[])[] = [];
+    collectEvents("<p>{a.b.c}{x}</p>", {
+      isKnownVariable: (path) => {
+        paths.push(path);
+        return true;
+      },
+    });
+    expect(paths).toEqual([["a", "b", "c"], ["x"]]);
+  });
+
+  it("stays silent on variable references without an isKnownVariable probe", () => {
+    expect(collectEvents("<p>{user.name}</p>")).toEqual([]);
+  });
+
+  it("treats __proto__ / constructor / prototype access as unsupported, not a variable", () => {
+    const isKnownVariable = vi.fn(() => true);
+    const events = collectEvents("<p>{a.__proto__}{constructor}{a.prototype.b}</p>", {
+      isKnownVariable,
+    });
+    expect(events.map((e) => e.kind)).toEqual([
+      "unsupported-expression",
+      "unsupported-expression",
+      "unsupported-expression",
+    ]);
+    expect(isKnownVariable).not.toHaveBeenCalled();
+  });
+
   it("reports an unsupported child expression with its raw source", () => {
     expect(collectEvents("<p>{foo()}</p>")).toMatchObject([
       {
@@ -371,6 +413,39 @@ describe("Unified JSX error events — React adapter wiring", () => {
     expect(events).toMatchObject([
       { kind: "unknown-component", message: "Unknown component <C>", tag: "C" },
     ]);
+  });
+
+  it("validates every path segment against the variables map at parse time", async () => {
+    const events: JsxErrorEvent[] = [];
+    const parser = createIncrementalJsxParser(
+      streamOf("<p>{user.name}{user.na", "me.length}{user.nmae}{nope}</p>"),
+      {
+        variables: { user: { name: "uhyo" } },
+        onJsxError: (e) => events.push(e),
+      },
+    );
+    await parser.done;
+    // {user.name} and {user.name.length} (a boxed string member) resolve;
+    // the typo'd member and the unknown root are both reported.
+    expect(events).toMatchObject([
+      {
+        kind: "unknown-variable",
+        message: "Unknown variable reference {user.nmae}",
+        name: "user",
+        path: ["user", "nmae"],
+      },
+      { kind: "unknown-variable", message: "Unknown variable reference {nope}", name: "nope" },
+    ]);
+  });
+
+  it("reports a member access through a null/undefined intermediate", async () => {
+    const events: JsxErrorEvent[] = [];
+    const parser = createIncrementalJsxParser(streamOf("<p>{user.gone.deep}</p>"), {
+      variables: { user: { gone: null } },
+      onJsxError: (e) => events.push(e),
+    });
+    await parser.done;
+    expect(events).toMatchObject([{ kind: "unknown-variable", path: ["user", "gone", "deep"] }]);
   });
 
   it("does not probe resolveComponent at parse time without an onJsxError listener", async () => {

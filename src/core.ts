@@ -53,6 +53,17 @@ export type JsxErrorEvent =
       location: SourceLocation;
     }
   | {
+      /** A `{ }` variable reference rejected by the `isKnownVariable` probe. */
+      kind: "unknown-variable";
+      message: string;
+      /** The root identifier of the reference. */
+      name: string;
+      /** The full dot-notation path (`{a.b.c}` → `["a","b","c"]`). */
+      path: readonly string[];
+      /** Where the expression starts (its `{`). */
+      location: SourceLocation;
+    }
+  | {
       /** A `{ }` expression outside the supported subset. */
       kind: "unsupported-expression";
       message: string;
@@ -123,7 +134,13 @@ export function formatJsxError(event: JsxErrorEvent): string {
 export type ParserOptions = TreeBuilderOptions;
 
 /** A node in the renderer-independent AST. */
-export type Node = ElementNode | FragmentNode | TextNode | ExpressionNode | PendingNode;
+export type Node =
+  | ElementNode
+  | FragmentNode
+  | TextNode
+  | ExpressionNode
+  | VariableNode
+  | PendingNode;
 
 export interface ElementNode {
   kind: "element";
@@ -151,6 +168,65 @@ export interface ExpressionNode {
   kind: "expression";
   id: number;
   value: unknown;
+}
+
+/**
+ * A variable reference expression (`{foo}` / `{foo.bar.baz}`). The core only
+ * records the dot-notation path; resolution happens at render time against a
+ * consumer-supplied `variables` map (mirroring how component tags resolve
+ * through `components`). It appears as an {@link ExpressionNode} value (child
+ * position) or directly as a {@link PropValue} (attribute position).
+ */
+export interface VariableNode {
+  kind: "variable";
+  id: number;
+  /** Root identifier followed by its member accesses (`a.b.c` → `["a","b","c"]`). */
+  path: readonly string[];
+}
+
+/**
+ * Path segments that would escape the predefined data (prototype access, the
+ * `Function` constructor). The expression parser excludes them from the
+ * supported subset at any position — such a reference is
+ * `UNSUPPORTED_EXPRESSION` and never reaches the AST — and
+ * {@link resolveVariablePath} refuses them too, as defense in depth.
+ */
+export const FORBIDDEN_SEGMENTS: ReadonlySet<string> = new Set([
+  "__proto__",
+  "constructor",
+  "prototype",
+]);
+
+/**
+ * Resolve a {@link VariableNode} dot path against a `variables` map — the one
+ * canonical lookup, shared by parse-time validation (`isKnownVariable`) and
+ * render-time resolution so the two can never disagree.
+ *
+ * The root name must be an **own** property of the map (inherited
+ * `Object.prototype` members like `toString` are never "predefined"). Each
+ * member must be present on the previous value (`in`, prototype chain
+ * included; primitives are boxed, so `title.length` resolves on a string),
+ * except the {@link FORBIDDEN_SEGMENTS}, which are always refused. A missing
+ * name/member or a member on `null`/`undefined` is `{ found: false }`.
+ * `found: true` still covers a `null`/`undefined` *value* — the path itself is
+ * valid.
+ */
+export function resolveVariablePath(
+  variables: Record<string, unknown>,
+  path: readonly string[],
+): { found: true; value: unknown } | { found: false } {
+  const [name, ...members] = path;
+  if (name === undefined || FORBIDDEN_SEGMENTS.has(name) || !Object.hasOwn(variables, name)) {
+    return { found: false };
+  }
+  let value: unknown = variables[name];
+  for (const key of members) {
+    if (FORBIDDEN_SEGMENTS.has(key) || value == null || !(key in Object(value))) {
+      return { found: false };
+    }
+    value = (value as Record<string, unknown>)[key];
+  }
+  return { found: true, value };
 }
 
 /**

@@ -3,23 +3,27 @@
  *
  * Parses the raw source captured between `{ }` into a concrete value. The
  * supported subset is deliberately tiny: string/template (no substitutions)
- * literals, number literals, `true`/`false`/`null`/`undefined`, and a nested
+ * literals, number literals, `true`/`false`/`null`/`undefined`, a variable
+ * reference (`foo`, or dot-notation member access `foo.bar.baz`), and a nested
  * JSX element/fragment. Anything else yields {@link UNSUPPORTED_EXPRESSION}.
  *
- * Nested JSX is parsed by an injected `parseJsx` callback so this module stays a
- * dependency-free leaf (no import cycle with the tree builder).
+ * Nested JSX and variable references are handled by injected callbacks
+ * (`parseJsx` / `parseVariable`) so this module stays a dependency-free leaf
+ * (no import cycle with the tree builder).
  */
 
-import { UNSUPPORTED_EXPRESSION } from "./core";
+import { FORBIDDEN_SEGMENTS, UNSUPPORTED_EXPRESSION } from "./core";
 import type { Node, PropValue } from "./core";
 
 export type ParsedExpression = PropValue | typeof UNSUPPORTED_EXPRESSION;
 
 const NUMBER_RE = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/;
+const IDENTIFIER_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
 export function parseExpression(
   raw: string,
   parseJsx: (src: string) => Node | undefined,
+  parseVariable?: (path: readonly string[]) => Node | undefined,
 ): ParsedExpression {
   const t = raw.trim();
   if (t === "") return undefined;
@@ -42,7 +46,24 @@ export function parseExpression(
     const n = Number(t);
     if (!Number.isNaN(n)) return n;
   }
+  const path = parseVariablePath(t);
+  if (path) {
+    return parseVariable?.(path) ?? UNSUPPORTED_EXPRESSION;
+  }
   return UNSUPPORTED_EXPRESSION;
+}
+
+/**
+ * Parse a variable reference — a bare identifier (`foo`) or a dot-notation
+ * member chain (`foo.bar.baz`, whitespace around dots allowed); undefined if
+ * `t` is not exactly one. Bracket access, calls, and the
+ * {@link FORBIDDEN_SEGMENTS} are out of scope.
+ */
+function parseVariablePath(t: string): string[] | undefined {
+  const parts = t.split(".").map((part) => part.trim());
+  return parts.every((part) => IDENTIFIER_RE.test(part) && !FORBIDDEN_SEGMENTS.has(part))
+    ? parts
+    : undefined;
 }
 
 function unescape(ch: string | undefined): string {

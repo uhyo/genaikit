@@ -19,7 +19,7 @@ The pipeline is a chain of small, independently testable modules
 | ---- | ---- |
 | `src/tokenizer.ts` | Resumable, char-level state machine. Retains partial state across chunk boundaries and emits a **chunking-invariant** token stream. `getPending()` reports the renderable frontier (partial text). |
 | `src/tree-builder.ts` | Builds the append-only AST + open stack. Closed nodes are frozen and reused by reference; `snapshot()` overlays the single `PendingNode` frontier by cloning only the open path. Handles closing-tag mismatch (`mismatchedTag`). |
-| `src/expression.ts` | Pure parser for the supported `{ }` subset (literals + nested JSX via an injected callback). Returns `UNSUPPORTED_EXPRESSION` otherwise. Kept dependency-free to avoid an import cycle. |
+| `src/expression.ts` | Pure parser for the supported `{ }` subset (literals, predefined-variable references incl. dot-notation member access, + nested JSX — the latter two via injected callbacks). Returns `UNSUPPORTED_EXPRESSION` otherwise. Kept dependency-free to avoid an import cycle. |
 | `src/core.ts` | Public AST types + `createParser` (push-based store, version-cached `getTree`, per-chunk notifications). **Zero React dependency.** |
 | `src/stream.ts` | `pumpStream`: normalizes `ReadableStream`/`AsyncIterable` sources, decodes bytes with a streaming `TextDecoder`, supports cancellation. |
 | `src/render.ts` | AST → `ReactNode`. Component resolution, node-id keys, WeakMap memoization of closed subtrees. |

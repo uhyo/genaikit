@@ -88,11 +88,13 @@ This is **not** a JavaScript parser. It recognizes a small, safe JSX subset:
   `{…}`.
 - **Expressions** inside `{ }` (props and children) are limited to: string and
   template literals **without** `${}` substitutions, number literals,
-  `true` / `false` / `null` / `undefined`, and a nested JSX element/fragment.
+  `true` / `false` / `null` / `undefined`, a **predefined variable** reference
+  (`{name}`, or dot-notation member access `{user.name.first}`, resolved via the
+  `variables` option), and a nested JSX element/fragment.
 
-Anything outside this subset (identifiers, member access, calls, arithmetic,
-spreads, …) is treated as a recoverable error: it renders as nothing and is
-reported through `onJsxError`.
+Anything outside this subset (computed/bracket member access, calls,
+arithmetic, spreads, …) is treated as a recoverable error: it renders as
+nothing and is reported through `onJsxError`.
 
 ## API
 
@@ -124,6 +126,7 @@ streaming `TextDecoder` — the common `fetch().body` case),
 | Option               | Type                                                | Default        | Description                                                        |
 | -------------------- | --------------------------------------------------- | -------------- | ----------------------------------------------------------------- |
 | `components`         | `Record<string, ComponentType>`                     | —              | Map of Capitalized tag names to React components.                 |
+| `variables`          | `Record<string, unknown>`                           | —              | Values for `{name}` / `{name.member}` variable expressions.      |
 | `resolveComponent`   | `(name) => ComponentType \| undefined`              | —              | Resolver consulted before `components`.                           |
 | `Pending`            | `ComponentType`                                      | renders `null` | Placeholder rendered at the frontier.                             |
 | `onUnknownComponent` | `"pending" \| "skip" \| "passthrough"`              | `"pending"`    | How to *render* an unresolved component tag.                      |
@@ -132,7 +135,18 @@ streaming `TextDecoder` — the common `fetch().body` case),
 | `onStreamError`      | `(error: unknown) => void`                          | —              | Unrecoverable errors: the stream source failed (`done` rejects too). |
 
 The `components` map also acts as a **security allowlist** for untrusted
-AI-generated output — unknown components do not render by default.
+AI-generated output — unknown components do not render by default. The
+`variables` map works the same way for `{name}` expressions, and because it
+holds the actual values, **every segment** of a dot path is validated against
+them at parse time: `{user.nmae}` fires an `"unknown-variable"` event the
+moment it is parsed and renders as nothing. Lookup uses `in` semantics
+(prototype chain included; primitives are boxed, so `{title.length}` on a
+string resolves), and a member behind a `null`/`undefined` value is reported
+rather than crashing anything. References can never escape the predefined
+data: `__proto__`, `constructor`, and `prototype` are excluded from the
+syntax at any path position (they parse as an unsupported expression), and
+root names must be **own** properties of the map, so inherited
+`Object.prototype` members like `{toString}` never resolve.
 
 ### `createParser(options?)` — `jsx-incremental-parser/core`
 
@@ -153,7 +167,15 @@ core.end(); // finalize; drops the Pending frontier
 adapter. Since the core knows nothing about React components, pass
 `isKnownComponent: (tag) => boolean` if you want `"unknown-component"` events;
 the exported `isComponentName(tag)` helper tells you which tags are
-component-like (Capitalized or dotted).
+component-like (Capitalized or dotted). Likewise, pass
+`isKnownVariable: (path: readonly string[]) => boolean` for
+`"unknown-variable"` events — it receives the full dot path, so you can
+validate the root name only (`path[0]`) or every segment. The core emits
+variable references as `VariableNode`s (a dot-notation `path`) and leaves
+resolving them to the consumer; the exported
+`resolveVariablePath(variables, path)` helper implements the canonical lookup
+(the React adapter uses it for both parse-time validation and render-time
+resolution, so the two always agree).
 
 ## Error handling
 
@@ -205,6 +227,7 @@ human-readable `message` and a `location`:
 | -------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------ |
 | `"mismatched-tag"`         | `tag`, `expected`           | A closing tag doesn't match the innermost open element (`expected: null` = stray close).         |
 | `"unknown-component"`      | `tag`                       | A Capitalized/dotted tag fails `resolveComponent` / `components` resolution, at open time.       |
+| `"unknown-variable"`       | `name`, `path`              | A `{ }` variable reference that does not resolve through `variables` (any segment).              |
 | `"unsupported-expression"` | `expression`, `attribute?`  | A `{ }` expression falls outside the supported subset.                                           |
 | `"unclosed-tag"`           | `tag`                       | An element is still open when the stream ends (reported innermost first, then auto-closed).      |
 
