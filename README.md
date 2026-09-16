@@ -130,6 +130,8 @@ streaming `TextDecoder` — the common `fetch().body` case),
 | `resolveComponent`   | `(name) => ComponentType \| undefined`              | —              | Resolver consulted before `components`.                           |
 | `Pending`            | `ComponentType`                                      | renders `null` | Placeholder rendered at the frontier.                             |
 | `onUnknownComponent` | `"pending" \| "skip" \| "passthrough"`              | `"pending"`    | How to *render* an unresolved component tag.                      |
+| `elements`           | `string[] \| Record<string, true \| string[]>`      | all allowed    | Allowlist of intrinsic (lowercase) tags, optionally with per-tag prop allowlists. |
+| `onDisallowedElement`| `"skip" \| "pending"`                               | `"skip"`       | How to *render* an intrinsic tag rejected by `elements`.          |
 | `mismatchedTag`      | `"autoclose" \| "ignore"`                           | `"autoclose"`  | How to *repair* a closing tag that doesn't match the open element. |
 | `onJsxError`         | `(event: JsxErrorEvent) => void`                    | —              | Recoverable errors: unified structured JSX-level events, fired at parse time. |
 | `onStreamError`      | `(error: unknown) => void`                          | —              | Unrecoverable errors: the stream source failed (`done` rejects too). |
@@ -148,6 +150,71 @@ syntax at any path position (they parse as an unsupported expression), and
 root names must be **own** properties of the map, so inherited
 `Object.prototype` members like `{toString}` never resolve.
 
+### The schema: `elements` + built-in host prop rules
+
+`elements` completes the allowlist picture for intrinsic (lowercase) tags:
+
+```ts
+createIncrementalJsxParser(stream, {
+  elements: { div: true, p: true, a: ["href", "title"], img: ["src", "alt"] },
+  // or just: elements: ["div", "p", "a", "img"]
+});
+```
+
+A tag outside the list is reported at parse time (`kind:
+"disallowed-element"`) and rendered per `onDisallowedElement` — `"skip"`
+(default: renders nothing, subtree included) or `"pending"`. When a tag maps
+to a prop list, props outside it are reported (`kind: "invalid-prop"`) and
+dropped.
+
+Whether or not `elements` is set, **built-in host prop rules** always apply
+to intrinsic tags. They exist because AI output frequently contains props
+that would make React throw (breaking the "errors never blank the UI"
+promise) or that are unsafe on untrusted input; each violation is dropped
+from the rendered output and reported as `"invalid-prop"`:
+
+- `dangerouslySetInnerHTML`, `srcDoc`, `ref`, `key`, and `children` are never
+  allowed (checked case-insensitively).
+- `on*` event handlers must reference a predefined variable —
+  `onClick={actions.confirm}` wires the actual function from `variables`,
+  which is also the idiomatic way to give AI-generated UI interactivity.
+  String handlers (`onclick="…"`) are rejected.
+- `style` must be a predefined variable resolving to an object
+  (`style={theme.card}`); string styles would make React throw.
+- URL props (`href`, `src`, `action`, …) must not use `javascript:`,
+  `vbscript:`, or `data:text/html` schemes, control characters stripped.
+
+Component tags are exempt from all prop rules — their props are the
+component author's contract.
+
+### The schema as a prompt contract: `formatPromptContract`
+
+The same maps that enforce the schema describe it, so you can hand the model
+the exact subset it is allowed to produce. `formatPromptContract` serializes
+the configured schema — syntax subset, allowed elements/props, available
+components, predefined variables (names and shallow shapes only, never
+values) — into text for the system prompt of the generating model:
+
+```ts
+import { formatPromptContract } from "jsx-incremental-parser";
+
+const schema = {
+  components: { Card, Button },
+  variables: { user, actions: { confirm: onConfirm } },
+  elements: { div: true, p: true, a: ["href"] },
+};
+
+const systemPrompt = `You generate UI for …\n\n${formatPromptContract(schema)}`;
+const parser = createIncrementalJsxParser(stream, {
+  ...schema,
+  onJsxError: (e) => agent.report(formatJsxError(e)),
+});
+```
+
+Together with `onJsxError` + `formatJsxError` this closes the loop: the
+contract tells the model what it may emit, and the events tell it what it
+got wrong.
+
 ### `createParser(options?)` — `jsx-incremental-parser/core`
 
 Framework-agnostic, push-based core that emits a renderer-independent AST. Zero
@@ -164,7 +231,14 @@ core.end(); // finalize; drops the Pending frontier
 ```
 
 `createParser` accepts `mismatchedTag` and `onJsxError` like the React
-adapter. Since the core knows nothing about React components, pass
+adapter. The schema helpers are exported here too (they are React-free):
+`isElementAllowed(elements, tag)` and `checkHostProp(tag, prop, value,
+{ elements, variables })` implement the canonical checks — wire them into
+`isAllowedElement` / `checkProp` for parse-time `"disallowed-element"` /
+`"invalid-prop"` events, and apply the same helpers in your renderer so
+reporting and enforcement agree (that is exactly what the React adapter
+does). `formatPromptContract` is exported here as well. Since the core
+knows nothing about React components, pass
 `isKnownComponent: (tag) => boolean` if you want `"unknown-component"` events;
 the exported `isComponentName(tag)` helper tells you which tags are
 component-like (Capitalized or dotted). Likewise, pass
@@ -230,6 +304,8 @@ human-readable `message` and a `location`:
 | `"unknown-variable"`       | `name`, `path`              | A `{ }` variable reference that does not resolve through `variables` (any segment).              |
 | `"unsupported-expression"` | `expression`, `attribute?`  | A `{ }` expression falls outside the supported subset.                                           |
 | `"unclosed-tag"`           | `tag`                       | An element is still open when the stream ends (reported innermost first, then auto-closed).      |
+| `"disallowed-element"`     | `tag`                       | An intrinsic (lowercase) tag rejected by the `elements` allowlist.                               |
+| `"invalid-prop"`           | `tag`, `prop`, `reason`     | A prop on an intrinsic element rejected by the schema (per-tag allowlist or built-in rules); the renderer drops it. |
 
 ### Error locations: `location` and `formatJsxError`
 

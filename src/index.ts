@@ -10,9 +10,13 @@
 
 import type { ComponentType, ReactNode } from "react";
 
-import type { JsxErrorEvent, MismatchBehavior, Node } from "./core";
-import { createParser, resolveVariablePath } from "./core";
-import { createRenderer, type UnknownComponentBehavior } from "./render";
+import type { ElementAllowlist, JsxErrorEvent, MismatchBehavior, Node } from "./core";
+import { checkHostProp, createParser, isElementAllowed, resolveVariablePath } from "./core";
+import {
+  createRenderer,
+  type DisallowedElementBehavior,
+  type UnknownComponentBehavior,
+} from "./render";
 import type { JsxStreamSource } from "./stream";
 import { pumpStream } from "./stream";
 
@@ -30,10 +34,17 @@ export type {
   JsxErrorListener,
   SourceLocation,
 } from "./core";
-export { formatJsxError, resolveVariablePath } from "./core";
+export {
+  checkHostProp,
+  formatJsxError,
+  formatPromptContract,
+  isElementAllowed,
+  resolveVariablePath,
+} from "./core";
+export type { ElementAllowlist, PromptContractOptions, SchemaOptions } from "./core";
 export type { JsxStreamSource } from "./stream";
 export { Pending } from "./render";
-export type { UnknownComponentBehavior } from "./render";
+export type { DisallowedElementBehavior, UnknownComponentBehavior } from "./render";
 
 export interface IncrementalJsxParserOptions {
   /** Tag name -> React component map for capitalized JSX names. */
@@ -53,6 +64,20 @@ export interface IncrementalJsxParserOptions {
   resolveComponent?: (name: string) => ComponentType<never> | undefined;
   /** Behavior for an unresolved component tag (default: "pending"). */
   onUnknownComponent?: UnknownComponentBehavior;
+  /**
+   * Allowlist of intrinsic (lowercase) HTML elements — the schema counterpart
+   * of `components`. A list of tag names, or a record mapping each allowed
+   * tag to `true` (any prop) or to its allowed prop names
+   * (`{ div: true, a: ["href"] }`). Absent = every intrinsic tag renders.
+   * Whether or not it is set, the built-in host prop rules always apply (see
+   * `checkHostProp`): string `style` values, `dangerouslySetInnerHTML` &c.,
+   * non-variable `on*` handlers, and `javascript:` URLs are dropped and
+   * reported (`kind: "invalid-prop"`). `formatPromptContract` serializes the
+   * whole schema into a system-prompt spec for the generating model.
+   */
+  elements?: ElementAllowlist;
+  /** Behavior for a disallowed intrinsic tag (default: "skip"). */
+  onDisallowedElement?: DisallowedElementBehavior;
   /** Closing-tag mismatch recovery strategy (default: "autoclose"). */
   mismatchedTag?: MismatchBehavior;
   /**
@@ -111,6 +136,13 @@ export function createIncrementalJsxParser(
       : undefined,
     isKnownVariable: options.onJsxError
       ? (path) => options.variables != null && resolveVariablePath(options.variables, path).found
+      : undefined,
+    isAllowedElement:
+      options.onJsxError && options.elements
+        ? (tag) => isElementAllowed(options.elements, tag)
+        : undefined,
+    checkProp: options.onJsxError
+      ? (tag, prop, value) => checkHostProp(tag, prop, value, options)
       : undefined,
   });
   const renderer = createRenderer(options);
