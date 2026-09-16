@@ -14,8 +14,23 @@ import type { TreeBuilderOptions } from "./tree-builder";
 export type { MismatchBehavior, TreeBuilderOptions } from "./tree-builder";
 export { isComponentName } from "./tree-builder";
 export type { SourceLocation } from "./tokenizer";
-export { checkHostProp, formatPromptContract, isElementAllowed } from "./schema";
-export type { ElementAllowlist, PromptContractOptions, SchemaOptions } from "./schema";
+export {
+  checkProp,
+  checkPropValue,
+  describeType,
+  formatPromptContract,
+  isElementAllowed,
+  resolveVariableType,
+} from "./schema";
+export type {
+  ComponentSchemaEntry,
+  ElementAllowlist,
+  PromptContractOptions,
+  PropsDefinition,
+  PropTypes,
+  SchemaOptions,
+  SchemaType,
+} from "./schema";
 
 /**
  * A structured, **recoverable** JSX-level error event (PLAN.md §7), emitted
@@ -96,8 +111,9 @@ export type JsxErrorEvent =
     }
   | {
       /**
-       * A prop on an intrinsic element rejected by the schema (per-tag
-       * allowlist or the built-in host prop rules); the renderer drops it.
+       * A prop rejected by the schema: on an intrinsic element, the per-tag
+       * declaration or the built-in host prop rules; on a component, its
+       * declared prop catalog. The renderer drops the prop.
        */
       kind: "invalid-prop";
       message: string;
@@ -105,7 +121,7 @@ export type JsxErrorEvent =
       tag: string;
       /** The rejected prop name. */
       prop: string;
-      /** Why it was rejected (as returned by `checkHostProp`). */
+      /** Why it was rejected (as returned by `checkProp`). */
       reason: string;
       /** Where the owning element's opening tag starts (its `<`). */
       location: SourceLocation;

@@ -20,7 +20,7 @@ derived from it.
 - New `formatPromptContract(options)` serializes the configured schema
   (syntax subset, allowed elements/props, components, variable shapes) into
   system-prompt-ready text for the model generating the stream.
-- The canonical checks (`isElementAllowed`, `checkHostProp`) and the new
+- The canonical checks (`isElementAllowed`, `checkProp`) and the new
   core hooks (`isAllowedElement`, `checkProp`) are exported from both the
   root and `/core` entries, so custom renderers can enforce exactly what the
   parse-time events report.

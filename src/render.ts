@@ -20,8 +20,8 @@ import type { ComponentType, ReactNode } from "react";
 
 import { isComponentName, resolveVariablePath, UNSUPPORTED_EXPRESSION } from "./core";
 import type { ElementNode, Node, VariableNode } from "./core";
-import { checkHostProp, isElementAllowed } from "./schema";
-import type { ElementAllowlist } from "./schema";
+import { checkProp, isElementAllowed } from "./schema";
+import type { ElementAllowlist, PropsDefinition, SchemaType } from "./schema";
 
 /**
  * How to render a component tag that cannot be resolved. Purely a rendering
@@ -40,11 +40,45 @@ export type UnknownComponentBehavior = "pending" | "skip" | "passthrough";
  */
 export type DisallowedElementBehavior = "skip" | "pending";
 
+/**
+ * A `components`-map entry: the component itself, or a {@link ComponentSpec}
+ * that also declares the props the component accepts.
+ */
+export type ComponentEntry = ComponentType<never> | ComponentSpec;
+
+/**
+ * A component together with its declared prop catalog. The declaration is an
+ * allowlist: a prop outside it (or with a value that fails its declared
+ * {@link SchemaType}) is reported at parse time (`kind: "invalid-prop"`) and
+ * dropped by the renderer.
+ */
+export interface ComponentSpec {
+  component: ComponentType<never>;
+  /** Declared prop catalog; absent = any props (the author's contract). */
+  props?: PropsDefinition | undefined;
+}
+
+/** Unwrap a `components`-map entry to its component. */
+export function resolveComponentEntry(
+  entry: ComponentEntry | undefined,
+): ComponentType<never> | undefined {
+  if (entry != null && typeof entry === "object" && "component" in entry) {
+    return entry.component;
+  }
+  // A bare component: a function, a class, or a memo/forwardRef exotic.
+  return entry as ComponentType<never> | undefined;
+}
+
 export interface RenderOptions {
-  /** Tag name -> React component, for Capitalized JSX names. */
-  components?: Record<string, ComponentType<never>> | undefined;
+  /**
+   * Tag name -> React component (or a {@link ComponentSpec} declaring its
+   * props), for Capitalized JSX names.
+   */
+  components?: Record<string, ComponentEntry> | undefined;
   /** Variable name -> value, for `{name}` / `{name.member}` expressions. */
   variables?: Record<string, unknown> | undefined;
+  /** Declared variable types, refining (or standing in for) the values. */
+  variableTypes?: Readonly<Record<string, SchemaType>> | undefined;
   /** Placeholder rendered at the frontier (default: {@link Pending}). */
   Pending?: ComponentType<unknown> | undefined;
   /** Optional resolver, consulted before the `components` map. */
@@ -123,9 +157,9 @@ export function createRenderer(options: RenderOptions = {}): Renderer {
 
     const props: Record<string, unknown> = { key: node.id };
     for (const [name, value] of Object.entries(node.props)) {
-      // A schema-rejected host prop is dropped (already reported at parse time
-      // via "invalid-prop"); left in, React would throw on e.g. string styles.
-      if (checkHostProp(node.tag, name, value, options) !== null) continue;
+      // A schema-rejected prop is dropped (already reported at parse time via
+      // "invalid-prop"); left in, React would throw on e.g. string styles.
+      if (checkProp(node.tag, name, value, options) !== null) continue;
       props[name] = renderValue(value);
     }
     const children = node.children.map(renderNode);
@@ -169,7 +203,8 @@ export function createRenderer(options: RenderOptions = {}): Renderer {
       }
       return { kind: "host", tag };
     }
-    const resolved = options.resolveComponent?.(tag) ?? options.components?.[tag];
+    const resolved =
+      options.resolveComponent?.(tag) ?? resolveComponentEntry(options.components?.[tag]);
     if (resolved) {
       return { kind: "component", type: resolved };
     }

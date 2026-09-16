@@ -10,10 +10,18 @@
 
 import type { ComponentType, ReactNode } from "react";
 
-import type { ElementAllowlist, JsxErrorEvent, MismatchBehavior, Node } from "./core";
-import { checkHostProp, createParser, isElementAllowed, resolveVariablePath } from "./core";
+import type { ElementAllowlist, JsxErrorEvent, MismatchBehavior, Node, SchemaType } from "./core";
+import {
+  checkProp,
+  createParser,
+  isElementAllowed,
+  resolveVariablePath,
+  resolveVariableType,
+} from "./core";
 import {
   createRenderer,
+  resolveComponentEntry,
+  type ComponentEntry,
   type DisallowedElementBehavior,
   type UnknownComponentBehavior,
 } from "./render";
@@ -35,29 +43,63 @@ export type {
   SourceLocation,
 } from "./core";
 export {
-  checkHostProp,
+  checkProp,
+  checkPropValue,
+  describeType,
   formatJsxError,
   formatPromptContract,
   isElementAllowed,
   resolveVariablePath,
+  resolveVariableType,
 } from "./core";
-export type { ElementAllowlist, PromptContractOptions, SchemaOptions } from "./core";
+export type {
+  ComponentSchemaEntry,
+  ElementAllowlist,
+  PromptContractOptions,
+  PropsDefinition,
+  PropTypes,
+  SchemaOptions,
+  SchemaType,
+} from "./core";
 export type { JsxStreamSource } from "./stream";
-export { Pending } from "./render";
-export type { DisallowedElementBehavior, UnknownComponentBehavior } from "./render";
+export { Pending, resolveComponentEntry } from "./render";
+export type {
+  ComponentEntry,
+  ComponentSpec,
+  DisallowedElementBehavior,
+  UnknownComponentBehavior,
+} from "./render";
 
 export interface IncrementalJsxParserOptions {
-  /** Tag name -> React component map for capitalized JSX names. */
-  components?: Record<string, ComponentType<never>>;
+  /**
+   * Tag name -> React component map for capitalized JSX names — the
+   * **component catalog**. An entry is either the component itself, or a
+   * `{ component, props }` spec that also declares the props the component
+   * accepts: prop names (`["title"]`), or prop name -> `SchemaType`
+   * (`{ title: "string", onAction: "function" }`). With a declaration, every
+   * prop parsed on that component is validated against it — an unknown prop
+   * or a value failing its declared type is reported (`kind: "invalid-prop"`)
+   * and dropped. Without one, props are the component author's contract.
+   */
+  components?: Record<string, ComponentEntry>;
   /**
    * Variable name -> value, for `{name}` / `{name.member}` expressions
    * (dot notation only). Like `components`, this is the allowlist: every
    * segment of a reference is validated against these values at parse time,
    * so a path that would not resolve (unknown root name, or a member missing
    * at any depth) renders as nothing and is reported through `onJsxError`
-   * (`kind: "unknown-variable"`).
+   * (`kind: "unknown-variable"`). The values also give variable references
+   * their inferred `SchemaType` for prop type checking.
    */
   variables?: Record<string, unknown>;
+  /**
+   * Variable name -> declared `SchemaType`. Optional refinement of
+   * `variables`: a declared type (an object shape is walked along dot paths)
+   * takes precedence over the type inferred from the value, and a variable
+   * declared here counts as known even without a value. Useful when a value
+   * alone under-describes the type (or is not representative).
+   */
+  variableTypes?: Readonly<Record<string, SchemaType>>;
   /** Placeholder rendered at the streaming frontier (default: renders null). */
   Pending?: ComponentType<unknown>;
   /** Optional resolver, consulted before the `components` map. */
@@ -67,13 +109,14 @@ export interface IncrementalJsxParserOptions {
   /**
    * Allowlist of intrinsic (lowercase) HTML elements — the schema counterpart
    * of `components`. A list of tag names, or a record mapping each allowed
-   * tag to `true` (any prop) or to its allowed prop names
-   * (`{ div: true, a: ["href"] }`). Absent = every intrinsic tag renders.
-   * Whether or not it is set, the built-in host prop rules always apply (see
-   * `checkHostProp`): string `style` values, `dangerouslySetInnerHTML` &c.,
-   * non-variable `on*` handlers, and `javascript:` URLs are dropped and
-   * reported (`kind: "invalid-prop"`). `formatPromptContract` serializes the
-   * whole schema into a system-prompt spec for the generating model.
+   * tag to `true` (any prop), to its allowed prop names, or to prop name ->
+   * `SchemaType` (`{ div: true, a: { href: "url", title: "string" } }`).
+   * Absent = every intrinsic tag renders. Whether or not it is set, the
+   * built-in host prop rules always apply (see `checkProp`): string `style`
+   * values, `dangerouslySetInnerHTML` &c., non-function `on*` handlers, and
+   * `javascript:` URLs are dropped and reported (`kind: "invalid-prop"`).
+   * `formatPromptContract` serializes the whole schema into a system-prompt
+   * spec for the generating model.
    */
   elements?: ElementAllowlist;
   /** Behavior for a disallowed intrinsic tag (default: "skip"). */
@@ -132,17 +175,21 @@ export function createIncrementalJsxParser(
     // Only probe component resolution at parse time when someone listens, so
     // `resolveComponent` sees no extra calls otherwise.
     isKnownComponent: options.onJsxError
-      ? (tag) => (options.resolveComponent?.(tag) ?? options.components?.[tag]) != null
+      ? (tag) =>
+          (options.resolveComponent?.(tag) ?? resolveComponentEntry(options.components?.[tag])) !=
+          null
       : undefined,
     isKnownVariable: options.onJsxError
-      ? (path) => options.variables != null && resolveVariablePath(options.variables, path).found
+      ? (path) =>
+          (options.variables != null && resolveVariablePath(options.variables, path).found) ||
+          (options.variableTypes != null && resolveVariableType(options, path) !== undefined)
       : undefined,
     isAllowedElement:
       options.onJsxError && options.elements
         ? (tag) => isElementAllowed(options.elements, tag)
         : undefined,
     checkProp: options.onJsxError
-      ? (tag, prop, value) => checkHostProp(tag, prop, value, options)
+      ? (tag, prop, value) => checkProp(tag, prop, value, options)
       : undefined,
   });
   const renderer = createRenderer(options);

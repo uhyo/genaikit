@@ -78,7 +78,8 @@ export interface TreeBuilderOptions {
    * Optional prop check, probed for every prop when the opening tag
    * completes: a non-`null` return is the human-readable rejection reason and
    * emits an `"invalid-prop"` event. Recovery/rendering is unaffected — the
-   * renderer applies the same check to drop the prop (see `checkHostProp`).
+   * renderer applies the same check to drop the prop (see `checkProp` in
+   * `schema.ts`).
    */
   checkProp?: ((tag: string, prop: string, value: PropValue) => string | null) | undefined;
 }

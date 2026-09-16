@@ -4,13 +4,15 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  checkHostProp,
+  checkProp,
+  checkPropValue,
   createParser,
   formatPromptContract,
   isElementAllowed,
+  resolveVariableType,
   UNSUPPORTED_EXPRESSION,
 } from "./core";
-import type { JsxErrorEvent, PropValue, VariableNode } from "./core";
+import type { JsxErrorEvent, PropValue, SchemaOptions, VariableNode } from "./core";
 import { createIncrementalJsxParser } from "./index";
 import { createRenderer, type RenderOptions } from "./render";
 
@@ -52,50 +54,174 @@ describe("isElementAllowed", () => {
   });
 });
 
-describe("checkHostProp — built-in rules", () => {
+describe("checkProp — built-in rules", () => {
   it("exempts component tags and the unsupported-expression sentinel", () => {
-    expect(checkHostProp("Card", "style", "red")).toBeNull();
-    expect(
-      checkHostProp("div", "style", UNSUPPORTED_EXPRESSION as unknown as PropValue),
-    ).toBeNull();
+    expect(checkProp("Card", "style", "red")).toBeNull();
+    expect(checkProp("div", "style", UNSUPPORTED_EXPRESSION as unknown as PropValue)).toBeNull();
   });
 
   it("always rejects the HTML-injection and React-internal props", () => {
     for (const prop of ["dangerouslySetInnerHTML", "srcDoc", "srcdoc", "ref", "key", "children"]) {
-      expect(checkHostProp("div", prop, "x"), prop).not.toBeNull();
+      expect(checkProp("div", prop, "x"), prop).not.toBeNull();
     }
   });
 
   it("rejects string styles but accepts a variable resolving to an object", () => {
     const options = { variables: { theme: { card: { color: "red" }, oops: "red" } } };
-    expect(checkHostProp("div", "style", "color:red", options)).not.toBeNull();
-    expect(checkHostProp("div", "style", variable("theme", "card"), options)).toBeNull();
-    expect(checkHostProp("div", "style", variable("theme", "oops"), options)).not.toBeNull();
+    expect(checkProp("div", "style", "color:red", options)).not.toBeNull();
+    expect(checkProp("div", "style", variable("theme", "card"), options)).toBeNull();
+    expect(checkProp("div", "style", variable("theme", "oops"), options)).not.toBeNull();
     // Unresolvable → renders as undefined; already reported as unknown-variable.
-    expect(checkHostProp("div", "style", variable("nope"), options)).toBeNull();
+    expect(checkProp("div", "style", variable("nope"), options)).toBeNull();
   });
 
   it("rejects on* handlers unless they reference a predefined variable", () => {
-    expect(checkHostProp("button", "onClick", "alert(1)")).not.toBeNull();
-    expect(checkHostProp("button", "onclick", "alert(1)")).not.toBeNull();
-    expect(checkHostProp("button", "onClick", variable("actions", "go"))).toBeNull();
+    expect(checkProp("button", "onClick", "alert(1)")).not.toBeNull();
+    expect(checkProp("button", "onclick", "alert(1)")).not.toBeNull();
+    expect(checkProp("button", "onClick", variable("actions", "go"))).toBeNull();
   });
 
   it("rejects unsafe URL schemes, including obfuscated ones", () => {
-    expect(checkHostProp("a", "href", "javascript:alert(1)")).not.toBeNull();
-    expect(checkHostProp("a", "href", " JaVaScRiPt:alert(1)")).not.toBeNull();
-    expect(checkHostProp("a", "href", "java\u0000script:alert(1)")).not.toBeNull();
-    expect(checkHostProp("iframe", "src", "data:text/html,<script>")).not.toBeNull();
-    expect(checkHostProp("a", "href", "https://example.com/")).toBeNull();
-    expect(checkHostProp("a", "href", "/relative?q=javascript:")).toBeNull();
+    expect(checkProp("a", "href", "javascript:alert(1)")).not.toBeNull();
+    expect(checkProp("a", "href", " JaVaScRiPt:alert(1)")).not.toBeNull();
+    expect(checkProp("a", "href", "java\u0000script:alert(1)")).not.toBeNull();
+    expect(checkProp("iframe", "src", "data:text/html,<script>")).not.toBeNull();
+    expect(checkProp("a", "href", "https://example.com/")).toBeNull();
+    expect(checkProp("a", "href", "/relative?q=javascript:")).toBeNull();
   });
 
   it("enforces a per-tag prop allowlist from the record form", () => {
     const options = { elements: { a: ["href"] } } as const;
-    expect(checkHostProp("a", "href", "/x", options)).toBeNull();
-    expect(checkHostProp("a", "id", "z", options)).not.toBeNull();
+    expect(checkProp("a", "href", "/x", options)).toBeNull();
+    expect(checkProp("a", "id", "z", options)).not.toBeNull();
     // List form and `true` entries allow any prop (built-ins still apply).
-    expect(checkHostProp("a", "id", "z", { elements: ["a"] })).toBeNull();
+    expect(checkProp("a", "id", "z", { elements: ["a"] })).toBeNull();
+  });
+});
+
+describe("checkPropValue — the lightweight type system", () => {
+  it("accepts matching literals and rejects mismatches", () => {
+    expect(checkPropValue("hi", "string")).toBeNull();
+    expect(checkPropValue(42, "number")).toBeNull();
+    expect(checkPropValue(true, "boolean")).toBeNull();
+    expect(checkPropValue(42, "string")).not.toBeNull();
+    expect(checkPropValue("hi", "boolean")).not.toBeNull();
+  });
+
+  it("treats nullish values and the `any` type as always fine", () => {
+    expect(checkPropValue(null, "function")).toBeNull();
+    expect(checkPropValue(undefined, "object")).toBeNull();
+    expect(checkPropValue("whatever", "any")).toBeNull();
+  });
+
+  it("supports union types", () => {
+    expect(checkPropValue("a", ["string", "number"])).toBeNull();
+    expect(checkPropValue(1, ["string", "number"])).toBeNull();
+    expect(checkPropValue(true, ["string", "number"])).not.toBeNull();
+  });
+
+  it("`node` accepts nested JSX and renderable primitives", () => {
+    const jsx: PropValue = {
+      kind: "element",
+      id: 1,
+      tag: "b",
+      props: {},
+      children: [],
+      status: "closed",
+    };
+    expect(checkPropValue(jsx, "node")).toBeNull();
+    expect(checkPropValue("text", "node")).toBeNull();
+    expect(checkPropValue(7, "node")).toBeNull();
+    expect(checkPropValue(jsx, "string")).not.toBeNull();
+  });
+
+  it("`url` scheme-checks literal strings but trusts variable references", () => {
+    expect(checkPropValue("https://example.com/", "url")).toBeNull();
+    expect(checkPropValue("javascript:alert(1)", "url")).not.toBeNull();
+    // A variable is the integrator's own data — only its string-ness is checked.
+    expect(checkPropValue(variable("link"), "url", { variables: { link: "x:y" } })).toBeNull();
+    expect(checkPropValue(variable("n"), "url", { variables: { n: 3 } })).not.toBeNull();
+  });
+
+  it("checks variable references by resolved type, declared types winning over values", () => {
+    const options: SchemaOptions = {
+      variables: { user: { name: "Ada" } },
+      variableTypes: { user: { name: "string" } },
+    };
+    expect(checkPropValue(variable("user", "name"), "string", options)).toBeNull();
+    expect(checkPropValue(variable("user", "name"), "number", options)).not.toBeNull();
+    const declared: SchemaOptions = {
+      variables: { n: "looks-like-a-string" },
+      variableTypes: { n: "number" },
+    };
+    expect(checkPropValue(variable("n"), "number", declared)).toBeNull();
+  });
+});
+
+describe("resolveVariableType", () => {
+  it("walks declared shapes and falls back to value inference", () => {
+    const options: SchemaOptions = {
+      variables: { user: { name: "Ada", extra: 1 } },
+      variableTypes: { user: { name: "string" }, actions: { go: "function" } },
+    };
+    expect(resolveVariableType(options, ["user", "name"])).toBe("string");
+    // Not covered by the declaration → inferred from the value.
+    expect(resolveVariableType(options, ["user", "extra"])).toBe("number");
+    // Declared without a value → still typed (and thus "known").
+    expect(resolveVariableType(options, ["actions", "go"])).toBe("function");
+    expect(resolveVariableType(options, ["missing"])).toBeUndefined();
+  });
+
+  it("treats members of an opaque object type as unconstrained", () => {
+    expect(resolveVariableType({ variableTypes: { bag: "object" } }, ["bag", "anything"])).toBe(
+      "any",
+    );
+  });
+});
+
+describe("checkProp — typed prop declarations", () => {
+  const options: SchemaOptions = {
+    elements: { a: { href: "url", title: "string" }, div: true, button: true },
+    components: {
+      Card: {
+        component: () => null,
+        props: { title: "string", count: ["string", "number"], onAction: "function" },
+      },
+      Free: () => null,
+    },
+    variables: { actions: { go: () => {} }, user: { name: "Ada" } },
+  };
+
+  it("checks host props against their declared types", () => {
+    expect(checkProp("a", "href", "/docs", options)).toBeNull();
+    expect(checkProp("a", "title", "hello", options)).toBeNull();
+    expect(checkProp("a", "title", 42, options)).not.toBeNull();
+    // A prop outside the typed record is not allowed.
+    expect(checkProp("a", "rel", "noopener", options)).not.toBeNull();
+  });
+
+  it("still applies the built-in host rules under a typed declaration", () => {
+    expect(checkProp("a", "href", "javascript:alert(1)", options)).not.toBeNull();
+    expect(checkProp("div", "style", "color:red", options)).not.toBeNull();
+  });
+
+  it("validates component props against the catalog declaration", () => {
+    expect(checkProp("Card", "title", "hi", options)).toBeNull();
+    expect(checkProp("Card", "count", 3, options)).toBeNull();
+    expect(checkProp("Card", "title", true, options)).not.toBeNull();
+    expect(checkProp("Card", "onAction", variable("actions", "go"), options)).toBeNull();
+    expect(checkProp("Card", "onAction", "alert(1)", options)).not.toBeNull();
+    expect(checkProp("Card", "bogus", "x", options)).not.toBeNull();
+  });
+
+  it("leaves undeclared components as the author's contract", () => {
+    expect(checkProp("Free", "anything", "goes", options)).toBeNull();
+    expect(checkProp("Unknown", "anything", "goes", options)).toBeNull();
+  });
+
+  it("rejects an on* variable that resolves to a non-function", () => {
+    expect(checkProp("button", "onClick", variable("user", "name"), options)).not.toBeNull();
+    expect(checkProp("button", "onClick", variable("actions", "go"), options)).toBeNull();
   });
 });
 
@@ -197,6 +323,54 @@ describe("parse-time events through the React adapter", () => {
   });
 });
 
+describe("component prop enforcement end to end", () => {
+  const Card = ({ title, extra }: { title?: ReactNode; extra?: ReactNode }): ReactNode =>
+    createElement("section", null, "t:", title, " e:", extra);
+
+  it("drops a component prop outside the declared catalog", () => {
+    expect(
+      toHtml(`<Card title="ok" extra="nope" />`, {
+        components: { Card: { component: Card, props: { title: "string" } } },
+      }),
+    ).toBe("<section>t:ok e:</section>");
+  });
+
+  it("drops a component prop that fails its declared type", () => {
+    expect(
+      toHtml(`<Card title={42} />`, {
+        components: { Card: { component: Card, props: { title: "string" } } },
+      }),
+    ).toBe("<section>t: e:</section>");
+  });
+
+  it("reports component prop violations at parse time", async () => {
+    async function* source(): AsyncGenerator<string> {
+      yield `<Card title={42} />`;
+    }
+    const events: JsxErrorEvent[] = [];
+    const parser = createIncrementalJsxParser(source(), {
+      components: { Card: { component: Card, props: { title: "string" } } },
+      onJsxError: (event) => events.push(event),
+    });
+    await parser.done;
+    const invalid = events.find((e) => e.kind === "invalid-prop");
+    expect(invalid).toMatchObject({ tag: "Card", prop: "title" });
+  });
+
+  it("treats a type-declared variable as known and well-typed", async () => {
+    async function* source(): AsyncGenerator<string> {
+      yield `<div style={theme.card}>x</div>`;
+    }
+    const events: JsxErrorEvent[] = [];
+    const parser = createIncrementalJsxParser(source(), {
+      variableTypes: { theme: { card: "object" } },
+      onJsxError: (event) => events.push(event),
+    });
+    await parser.done;
+    expect(events).toEqual([]);
+  });
+});
+
 describe("formatPromptContract", () => {
   it("describes the configured elements, components, and variables", () => {
     const contract = formatPromptContract({
@@ -212,6 +386,26 @@ describe("formatPromptContract", () => {
     expect(contract).toContain("dangerouslySetInnerHTML");
     // Shapes only — variable values must never leak into the contract.
     expect(contract).not.toContain("Ada");
+  });
+
+  it("describes declared prop types and variable types", () => {
+    const contract = formatPromptContract({
+      elements: { a: { href: "url", title: "string" } },
+      components: {
+        Card: { component: () => null, props: { title: "string", width: ["string", "number"] } },
+        Free: () => null,
+      },
+      variableTypes: { theme: { card: "object" }, actions: { confirm: "function" } },
+      variables: { actions: { confirm: () => {} } },
+    });
+    expect(contract).toContain("- <a> — allowed props: href (URL string), title (string)");
+    expect(contract).toContain(
+      "- <Card> — allowed props: title (string), width (string or number)",
+    );
+    expect(contract).toContain("- <Free>");
+    // Declared types win over the value-derived shape.
+    expect(contract).toContain("- {actions} — object with fields: confirm (function)");
+    expect(contract).toContain("- {theme} — object with fields: card (object)");
   });
 
   it("falls back to sensible wording when nothing is configured", () => {

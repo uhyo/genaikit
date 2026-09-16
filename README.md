@@ -125,12 +125,13 @@ streaming `TextDecoder` — the common `fetch().body` case),
 
 | Option               | Type                                                | Default        | Description                                                        |
 | -------------------- | --------------------------------------------------- | -------------- | ----------------------------------------------------------------- |
-| `components`         | `Record<string, ComponentType>`                     | —              | Map of Capitalized tag names to React components.                 |
+| `components`         | `Record<string, ComponentType \| ComponentSpec>`    | —              | Component catalog: Capitalized tag names to React components, optionally with a declared prop catalog (`{ component, props }`). |
 | `variables`          | `Record<string, unknown>`                           | —              | Values for `{name}` / `{name.member}` variable expressions.      |
+| `variableTypes`      | `Record<string, SchemaType>`                        | —              | Declared variable types; refine (or stand in for) the values.    |
 | `resolveComponent`   | `(name) => ComponentType \| undefined`              | —              | Resolver consulted before `components`.                           |
 | `Pending`            | `ComponentType`                                      | renders `null` | Placeholder rendered at the frontier.                             |
 | `onUnknownComponent` | `"pending" \| "skip" \| "passthrough"`              | `"pending"`    | How to *render* an unresolved component tag.                      |
-| `elements`           | `string[] \| Record<string, true \| string[]>`      | all allowed    | Allowlist of intrinsic (lowercase) tags, optionally with per-tag prop allowlists. |
+| `elements`           | `string[] \| Record<string, true \| string[] \| PropTypes>` | all allowed | Allowlist of intrinsic (lowercase) tags, optionally with per-tag prop allowlists or prop types. |
 | `onDisallowedElement`| `"skip" \| "pending"`                               | `"skip"`       | How to *render* an intrinsic tag rejected by `elements`.          |
 | `mismatchedTag`      | `"autoclose" \| "ignore"`                           | `"autoclose"`  | How to *repair* a closing tag that doesn't match the open element. |
 | `onJsxError`         | `(event: JsxErrorEvent) => void`                    | —              | Recoverable errors: unified structured JSX-level events, fired at parse time. |
@@ -141,7 +142,8 @@ AI-generated output — unknown components do not render by default. The
 `variables` map works the same way for `{name}` expressions, and because it
 holds the actual values, **every segment** of a dot path is validated against
 them at parse time: `{user.nmae}` fires an `"unknown-variable"` event the
-moment it is parsed and renders as nothing. Lookup uses `in` semantics
+moment it is parsed and renders as nothing (a path covered by a
+`variableTypes` declaration also counts as known). Lookup uses `in` semantics
 (prototype chain included; primitives are boxed, so `{title.length}` on a
 string resolves), and a member behind a `null`/`undefined` value is reported
 rather than crashing anything. References can never escape the predefined
@@ -150,58 +152,112 @@ syntax at any path position (they parse as an unsupported expression), and
 root names must be **own** properties of the map, so inherited
 `Object.prototype` members like `{toString}` never resolve.
 
-### The schema: `elements` + built-in host prop rules
+### The schema: a lightweight type system
 
-`elements` completes the allowlist picture for intrinsic (lowercase) tags:
+The schema is a small, declarative type language shared by elements,
+components, and variables. A **`SchemaType`** is one of:
+
+- `"string"`, `"number"`, `"boolean"` — primitives (literals or variable
+  references);
+- `"function"` — only a variable reference can supply one
+  (`onClick={actions.confirm}`);
+- `"object"` — any object, via a variable reference (`style={theme.card}`);
+- `"node"` — renderable content: nested JSX, or a string/number/boolean;
+- `"url"` — a string used as a URL; a literal must not carry an unsafe
+  scheme (`javascript:`, `vbscript:`, `data:text/html`, control characters
+  stripped), while a variable reference is your own data and is only checked
+  to be string-typed;
+- `"any"` — anything (the implicit type when only prop *names* are listed);
+- a union: `["string", "number"]`;
+- an object shape: `{ name: "string", age: "number" }` (walked along dot
+  paths; matches wherever `"object"` is expected).
+
+**Elements** (`elements`) allowlist intrinsic (lowercase) tags; each tag maps
+to `true` (any prop), a list of allowed prop names, or prop name → type:
 
 ```ts
 createIncrementalJsxParser(stream, {
-  elements: { div: true, p: true, a: ["href", "title"], img: ["src", "alt"] },
+  elements: { div: true, p: true, a: { href: "url", title: "string" }, img: ["src", "alt"] },
   // or just: elements: ["div", "p", "a", "img"]
 });
 ```
 
 A tag outside the list is reported at parse time (`kind:
 "disallowed-element"`) and rendered per `onDisallowedElement` — `"skip"`
-(default: renders nothing, subtree included) or `"pending"`. When a tag maps
-to a prop list, props outside it are reported (`kind: "invalid-prop"`) and
-dropped.
+(default: renders nothing, subtree included) or `"pending"`. A prop outside a
+tag's declaration, or whose value fails its declared type, is reported
+(`kind: "invalid-prop"`) and dropped.
 
-Whether or not `elements` is set, **built-in host prop rules** always apply
-to intrinsic tags. They exist because AI output frequently contains props
-that would make React throw (breaking the "errors never blank the UI"
-promise) or that are unsafe on untrusted input; each violation is dropped
-from the rendered output and reported as `"invalid-prop"`:
+**Components** declare their prop catalog by wrapping the component in a
+spec — an entry in `components` is either the component itself or
+`{ component, props }`:
+
+```ts
+createIncrementalJsxParser(stream, {
+  components: {
+    Card: { component: Card, props: { title: "string", tone: ["string", "number"], onAction: "function" } },
+    Chart, // no declaration: props are the component author's contract
+  },
+});
+```
+
+With a declaration, every parsed prop on that component — string attributes
+and `{ }` expressions alike — is validated the same way as element props.
+
+**Variables** get their types inferred from the `variables` values, and
+`variableTypes` can declare them explicitly (declared types win; a variable
+declared only by type still counts as known):
+
+```ts
+createIncrementalJsxParser(stream, {
+  variables: { user, theme, actions },
+  variableTypes: { user: { name: "string" }, theme: "object", actions: { confirm: "function" } },
+});
+```
+
+So `<Card title={user.name}>` passes, while `onClick={user.name}` is
+rejected: the reference resolves to a string where a `"function"` was
+declared.
+
+Whether or not a schema is configured, **built-in host prop rules** always
+apply to intrinsic tags — they are default declarations in the same type
+system, and a user schema can tighten but never relax them. They exist
+because AI output frequently contains props that would make React throw
+(breaking the "errors never blank the UI" promise) or that are unsafe on
+untrusted input; each violation is dropped from the rendered output and
+reported as `"invalid-prop"`:
 
 - `dangerouslySetInnerHTML`, `srcDoc`, `ref`, `key`, and `children` are never
   allowed (checked case-insensitively).
-- `on*` event handlers must reference a predefined variable —
-  `onClick={actions.confirm}` wires the actual function from `variables`,
-  which is also the idiomatic way to give AI-generated UI interactivity.
-  String handlers (`onclick="…"`) are rejected.
-- `style` must be a predefined variable resolving to an object
-  (`style={theme.card}`); string styles would make React throw.
-- URL props (`href`, `src`, `action`, …) must not use `javascript:`,
-  `vbscript:`, or `data:text/html` schemes, control characters stripped.
+- `on*` event handlers are `"function"`-typed: they must reference a
+  predefined variable resolving to a function — `onClick={actions.confirm}`
+  wires the actual function from `variables`, which is also the idiomatic
+  way to give AI-generated UI interactivity. String handlers (`onclick="…"`)
+  are rejected.
+- `style` is `"object"`-typed: it must be a predefined variable resolving to
+  an object (`style={theme.card}`); string styles would make React throw.
+- URL props (`href`, `src`, `action`, …) are `"url"`-typed.
 
-Component tags are exempt from all prop rules — their props are the
-component author's contract.
+Component tags without a declaration are exempt from all prop rules — their
+props are the component author's contract.
 
 ### The schema as a prompt contract: `formatPromptContract`
 
 The same maps that enforce the schema describe it, so you can hand the model
 the exact subset it is allowed to produce. `formatPromptContract` serializes
-the configured schema — syntax subset, allowed elements/props, available
-components, predefined variables (names and shallow shapes only, never
-values) — into text for the system prompt of the generating model:
+the configured schema — syntax subset, allowed elements/props with their
+declared types, available components with their prop catalogs, predefined
+variables (declared types or shallow value shapes only, never values) — into
+text for the system prompt of the generating model:
 
 ```ts
 import { formatPromptContract } from "jsx-incremental-parser";
 
 const schema = {
-  components: { Card, Button },
+  components: { Card: { component: Card, props: { title: "string" } }, Button },
   variables: { user, actions: { confirm: onConfirm } },
-  elements: { div: true, p: true, a: ["href"] },
+  variableTypes: { actions: { confirm: "function" } },
+  elements: { div: true, p: true, a: { href: "url" } },
 };
 
 const systemPrompt = `You generate UI for …\n\n${formatPromptContract(schema)}`;
@@ -232,12 +288,13 @@ core.end(); // finalize; drops the Pending frontier
 
 `createParser` accepts `mismatchedTag` and `onJsxError` like the React
 adapter. The schema helpers are exported here too (they are React-free):
-`isElementAllowed(elements, tag)` and `checkHostProp(tag, prop, value,
-{ elements, variables })` implement the canonical checks — wire them into
-`isAllowedElement` / `checkProp` for parse-time `"disallowed-element"` /
-`"invalid-prop"` events, and apply the same helpers in your renderer so
-reporting and enforcement agree (that is exactly what the React adapter
-does). `formatPromptContract` is exported here as well. Since the core
+`isElementAllowed(elements, tag)` and `checkProp(tag, prop, value,
+{ elements, components, variables, variableTypes })` implement the canonical
+checks (with `checkPropValue` / `resolveVariableType` as the underlying type
+primitives) — wire them into `isAllowedElement` / `checkProp` for parse-time
+`"disallowed-element"` / `"invalid-prop"` events, and apply the same helpers
+in your renderer so reporting and enforcement agree (that is exactly what
+the React adapter does). `formatPromptContract` is exported here as well. Since the core
 knows nothing about React components, pass
 `isKnownComponent: (tag) => boolean` if you want `"unknown-component"` events;
 the exported `isComponentName(tag)` helper tells you which tags are
@@ -305,7 +362,7 @@ human-readable `message` and a `location`:
 | `"unsupported-expression"` | `expression`, `attribute?`  | A `{ }` expression falls outside the supported subset.                                           |
 | `"unclosed-tag"`           | `tag`                       | An element is still open when the stream ends (reported innermost first, then auto-closed).      |
 | `"disallowed-element"`     | `tag`                       | An intrinsic (lowercase) tag rejected by the `elements` allowlist.                               |
-| `"invalid-prop"`           | `tag`, `prop`, `reason`     | A prop on an intrinsic element rejected by the schema (per-tag allowlist or built-in rules); the renderer drops it. |
+| `"invalid-prop"`           | `tag`, `prop`, `reason`     | A prop rejected by the schema (declared prop catalog/types or built-in host rules); the renderer drops it. |
 
 ### Error locations: `location` and `formatJsxError`
 
