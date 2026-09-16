@@ -17,8 +17,9 @@ The pipeline is a chain of small, independently testable modules
 
 | File | Role |
 | ---- | ---- |
-| `src/tokenizer.ts` | Resumable, char-level state machine. Retains partial state across chunk boundaries and emits a **chunking-invariant** token stream. `getPending()` reports the renderable frontier (partial text). |
+| `src/tokenizer.ts` | Resumable, char-level state machine. Retains partial state across chunk boundaries and emits a **chunking-invariant** token stream. Text is entity-decoded and JSX-whitespace-normalized incrementally (real-JSX semantics). `getPending()` reports the renderable frontier (partial text; a possibly-incomplete entity or unresolved whitespace is withheld until it resolves). |
 | `src/tree-builder.ts` | Builds the append-only AST + open stack. Closed nodes are frozen and reused by reference; `snapshot()` overlays the single `PendingNode` frontier by cloning only the open path. Handles closing-tag mismatch (`mismatchedTag`). |
+| `src/entities.ts` | HTML character-reference decoding (numeric + the named HTML4 set + `apos`), shared by text and string attribute values. Unknown references stay verbatim. Dependency-free. |
 | `src/expression.ts` | Pure parser for the supported `{ }` subset (literals, predefined-variable references incl. dot-notation member access, + nested JSX — the latter two via injected callbacks). Returns `UNSUPPORTED_EXPRESSION` otherwise. Kept dependency-free to avoid an import cycle. |
 | `src/schema.ts` | Element allowlist (`elements`) + the lightweight prop type system (`SchemaType`: primitives, `function`/`object`/`node`/`url`/`any`, unions, object shapes). Elements and component specs declare prop catalogs (`checkProp` validates every parsed prop, incl. component props); variables get declared types (`variableTypes`) or value-inferred ones (`resolveVariableType`). The built-in host rules (`style: "object"`, `on*: "function"`, URL props: `"url"`, blocked `dangerouslySetInnerHTML` &c.) are default declarations in the same system and can't be relaxed. Shared canonical checks — parse-time events and render-time enforcement both call them. `formatPromptContract` serializes the schema (types included) for the generating model's system prompt. React-free. |
 | `src/core.ts` | Public AST types + `createParser` (push-based store, version-cached `getTree`, per-chunk notifications). **Zero React dependency.** |
@@ -38,7 +39,10 @@ The pipeline is a chain of small, independently testable modules
 
 ### Deliberate v1 scope decisions
 
-- Text is kept **raw** (no JSX whitespace collapsing).
+- Text follows **real JSX parser semantics** (Babel-equivalent): HTML entities
+  are decoded (numeric + HTML4 named set; not the full HTML5 list) and JSX
+  whitespace rules apply (indentation dropped, line breaks join with a single
+  space). Both happen incrementally in the tokenizer, decode-before-normalize.
 - Nested JSX *inside an expression* is buffered until its `}` (it appears at once
   rather than streaming its own inner frontier).
 
@@ -46,7 +50,8 @@ The pipeline is a chain of small, independently testable modules
 
 `.` (React adapter), `./react` (hook), `./core` (framework-agnostic). The
 `./core` entry must stay React-free — don't import `react`/`render.ts` from
-`core.ts`, `tokenizer.ts`, `tree-builder.ts`, `expression.ts`, or `stream.ts`.
+`core.ts`, `tokenizer.ts`, `tree-builder.ts`, `expression.ts`, `entities.ts`, or
+`stream.ts`.
 
 ## Development
 

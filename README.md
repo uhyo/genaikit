@@ -86,6 +86,13 @@ This is **not** a JavaScript parser. It recognizes a small, safe JSX subset:
   (`disabled` → `disabled={true}`), and expression values `prop={…}`.
 - **Children** — text, nested elements/fragments, and expression containers
   `{…}`.
+- **Text** — matches real JSX parser semantics: HTML character references are
+  decoded (numeric `&#65;` / `&#x1F600;` plus the named HTML4 set and
+  `&apos;`; unknown ones stay verbatim) in text and in string attribute
+  values, and JSX whitespace rules apply — indentation and whitespace-only
+  lines around child elements are dropped, and a line break inside text
+  collapses to a single joining space (whitespace within a single line is
+  kept).
 - **Expressions** inside `{ }` (props and children) are limited to: string and
   template literals **without** `${}` substitutions, number literals,
   `true` / `false` / `null` / `undefined`, a **predefined variable** reference

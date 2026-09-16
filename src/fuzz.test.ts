@@ -37,11 +37,19 @@ function genWord(rng: Rng): string {
   return s;
 }
 
+// Entities (valid, unknown, and unterminated) and newline/indent separators
+// exercise the tokenizer's resumable entity decoding and JSX whitespace
+// normalization across arbitrary chunk boundaries.
+const ENTITIES = ["&amp;", "&lt;", "&nbsp;", "&#65;", "&#x1F600;", "&nope;", "&amp"];
+const SEPARATORS = [" ", " ", "  ", "\n", "\n  ", " \n\t "];
+
 function genText(rng: Rng): string {
   const parts = 1 + Math.floor(rng() * 3);
   const words: string[] = [];
-  for (let i = 0; i < parts; i++) words.push(genWord(rng));
-  return words.join(" ");
+  for (let i = 0; i < parts; i++) {
+    words.push(rng() < 0.2 ? pick(rng, ENTITIES) : genWord(rng));
+  }
+  return words.join(pick(rng, SEPARATORS));
 }
 
 function genAttrs(rng: Rng): string {

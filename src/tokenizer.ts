@@ -7,11 +7,24 @@
  * (PLAN.md §5) is that the emitted token stream does not depend on how the
  * input is split into chunks.
  *
+ * Text matches real JSX parser semantics (Babel/TypeScript), applied
+ * incrementally:
+ *  - HTML character references (`&amp;`, `&#x1F600;`, …) are decoded in text
+ *    and in string attribute values; invalid ones stay verbatim.
+ *  - JSX whitespace rules: tabs become spaces, indentation and trailing
+ *    whitespace around line breaks are dropped, a line break inside text
+ *    collapses to a single joining space, and a whitespace-only run that
+ *    contains a line break produces no text at all.
+ *
  * {@link Tokenizer.getPending} describes the half-read construct at the
  * cursor. Only partial *text* is renderable; a partial tag/attribute
  * contributes nothing visible until it completes, which is what the frontier
- * model in PLAN.md §1 relies on.
+ * model in PLAN.md §1 relies on. A possible entity (`&am…`) and whitespace
+ * whose fate depends on what follows are likewise withheld from the pending
+ * text until they resolve.
  */
+
+import { decodeEntities, decodeEntity, MAX_ENTITY_LENGTH } from "./entities";
 
 /**
  * A location in the streamed source, attached to the tokens (and, through
@@ -96,6 +109,15 @@ function isNameChar(ch: string): boolean {
 const MAX_LINE_TEXT = 500;
 
 /**
+ * Whether `ch` can extend a buffered character reference: `#` right after the
+ * `&`, then alphanumerics (which covers the `x`/`X` of hex references).
+ */
+function isEntityBodyChar(ch: string, buf: string): boolean {
+  if (ch === "#") return buf === "&";
+  return (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || (ch >= "0" && ch <= "9");
+}
+
+/**
  * The recorded start of a construct (`<` of a tag, `{` of an expression) that
  * may later anchor a token's {@link SourceLocation}. `lineText` stays `null`
  * while the anchor's line is still streaming and is snapshotted when the line
@@ -115,8 +137,22 @@ interface Anchor {
  */
 export class Tokenizer {
   private state: State = State.Text;
-  /** Accumulated child text. */
+  /** Accumulated child text: entity-decoded and whitespace-normalized so far. */
   private text = "";
+  /**
+   * Whitespace (already tab→space converted) seen since the last text
+   * character, not yet committed: kept if more text follows on the same line,
+   * dropped if a newline follows (JSX trims line-trailing whitespace).
+   */
+  private textWs = "";
+  /**
+   * True when a line break has been seen since the last text character. While
+   * set, incoming whitespace is indentation (dropped) and the next text
+   * character joins with a single space.
+   */
+  private textNewline = false;
+  /** A possible character reference being buffered, starting with its `&`. */
+  private entityBuf = "";
   /** Accumulated tag name (open or close). */
   private name = "";
   private attrName = "";
@@ -226,9 +262,8 @@ export class Tokenizer {
    */
   end(): Token[] {
     const out: Token[] = [];
-    if (this.state === State.Text && this.text.length > 0) {
-      out.push({ type: "text", value: this.text });
-      this.text = "";
+    if (this.state === State.Text) {
+      this.flushText(out);
     }
     return out;
   }
@@ -249,6 +284,18 @@ export class Tokenizer {
   private step(ch: string, out: Token[]): void {
     switch (this.state) {
       case State.Text: {
+        if (this.entityBuf !== "") {
+          if (ch === ";") {
+            this.resolveEntity();
+            return;
+          }
+          if (this.entityBuf.length < MAX_ENTITY_LENGTH && isEntityBodyChar(ch, this.entityBuf)) {
+            this.entityBuf += ch;
+            return;
+          }
+          // Not a reference after all: flush verbatim, then handle `ch` below.
+          this.flushEntityLiteral();
+        }
         if (ch === "<") {
           this.flushText(out);
           this.tagAnchor = this.anchorHere();
@@ -256,8 +303,10 @@ export class Tokenizer {
         } else if (ch === "{") {
           this.flushText(out);
           this.startExpression(false);
+        } else if (ch === "&") {
+          this.entityBuf = "&";
         } else {
-          this.text += ch;
+          this.appendText(ch);
         }
         return;
       }
@@ -357,7 +406,7 @@ export class Tokenizer {
           out.push({
             type: "attribute",
             name: this.attrName,
-            value: { type: "string", value: this.attrValue },
+            value: { type: "string", value: decodeEntities(this.attrValue) },
           });
           this.attrName = "";
           this.attrValue = "";
@@ -437,7 +486,60 @@ export class Tokenizer {
     }
   }
 
+  /**
+   * Append one already-decoded character to the text run, applying the JSX
+   * whitespace rules incrementally (see the module doc). Whitespace is parked
+   * in {@link textWs} / {@link textNewline} until a text character or the end
+   * of the run decides whether it is kept, joined, or dropped.
+   */
+  private appendText(ch: string): void {
+    if (ch === "\n" || ch === "\r") {
+      // Whitespace before a line break is line-trailing: dropped.
+      this.textWs = "";
+      this.textNewline = true;
+      return;
+    }
+    if (ch === " " || ch === "\t") {
+      // After a line break this is indentation (dropped); otherwise park it.
+      if (!this.textNewline) this.textWs += " ";
+      return;
+    }
+    if (this.textNewline) {
+      // A line break inside text joins the lines with a single space.
+      if (this.text.length > 0) this.text += " ";
+      this.textNewline = false;
+    } else {
+      this.text += this.textWs;
+    }
+    this.textWs = "";
+    this.text += ch;
+  }
+
+  /** Feed a decoded (or verbatim) string through {@link appendText}. */
+  private appendDecoded(value: string): void {
+    for (const ch of value) this.appendText(ch);
+  }
+
+  /** The buffered `&…` turned out not to be a reference: keep it verbatim. */
+  private flushEntityLiteral(): void {
+    this.appendDecoded(this.entityBuf);
+    this.entityBuf = "";
+  }
+
+  /** A `;` arrived: decode the buffered reference, or keep it verbatim. */
+  private resolveEntity(): void {
+    const decoded = decodeEntity(this.entityBuf.slice(1));
+    this.appendDecoded(decoded ?? this.entityBuf + ";");
+    this.entityBuf = "";
+  }
+
   private flushText(out: Token[]): void {
+    if (this.entityBuf !== "") this.flushEntityLiteral();
+    // Whitespace at the end of the run's last line is kept; anything parked
+    // after a line break (the break itself included) is dropped.
+    if (!this.textNewline) this.text += this.textWs;
+    this.textWs = "";
+    this.textNewline = false;
     if (this.text.length > 0) {
       out.push({ type: "text", value: this.text });
       this.text = "";
