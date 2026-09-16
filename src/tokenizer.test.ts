@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Tokenizer, type Partial, type SourceLocation, type Token } from "./tokenizer";
+import { Tokenizer, type Pending, type SourceLocation, type Token } from "./tokenizer";
 
 /** Tokenize `input` split into chunks of the given sizes, collecting all tokens. */
 function tokenize(input: string, chunkSizes?: number[]): Token[] {
@@ -251,7 +251,7 @@ describe("Tokenizer — source locations", () => {
   });
 });
 
-function pendingAfter(input: string): Partial {
+function pendingAfter(input: string): Pending {
   const tk = new Tokenizer();
   tk.write(input);
   return tk.getPending();
@@ -259,19 +259,19 @@ function pendingAfter(input: string): Partial {
 
 describe("Tokenizer — getPending (frontier)", () => {
   it("reports no pending in an idle/complete state", () => {
-    expect(pendingAfter("<div>")).toEqual<Partial>({ type: "none" });
+    expect(pendingAfter("<div>")).toEqual<Pending>({ type: "none" });
   });
 
   it("reports partial text", () => {
-    expect(pendingAfter("<div>Hello")).toEqual<Partial>({ type: "text", value: "Hello" });
+    expect(pendingAfter("<div>Hello")).toEqual<Pending>({ type: "text", value: "Hello" });
   });
 
   it("reports no pending mid-tag (partial open tag is hidden)", () => {
-    expect(pendingAfter("<div><sp")).toEqual<Partial>({ type: "none" });
+    expect(pendingAfter("<div><sp")).toEqual<Pending>({ type: "none" });
   });
 
   it("reports no pending mid-attribute", () => {
-    expect(pendingAfter(`<div title="bo`)).toEqual<Partial>({ type: "none" });
+    expect(pendingAfter(`<div title="bo`)).toEqual<Pending>({ type: "none" });
   });
 });
 

@@ -1,5 +1,5 @@
 /**
- * Expression value parsing (PLAN.md §2, Phase 5).
+ * Expression value parsing (PLAN.md §2).
  *
  * Parses the raw source captured between `{ }` into a concrete value. The
  * supported subset is deliberately tiny: string/template (no substitutions)

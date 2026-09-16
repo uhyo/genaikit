@@ -53,7 +53,8 @@ export type ComponentEntry = ComponentType<never> | ComponentSpec;
  * dropped by the renderer.
  */
 export interface ComponentSpec {
-  component: ComponentType<never>;
+  /** May be omitted when the component is supplied by `resolveComponent`. */
+  component?: ComponentType<never> | undefined;
   /** Declared prop catalog; absent = any props (the author's contract). */
   props?: PropsDefinition | undefined;
 }
@@ -62,8 +63,10 @@ export interface ComponentSpec {
 export function resolveComponentEntry(
   entry: ComponentEntry | undefined,
 ): ComponentType<never> | undefined {
-  if (entry != null && typeof entry === "object" && "component" in entry) {
-    return entry.component;
+  // Same spec detection as the schema side (`componentPropsDefinition`), so a
+  // props-only entry counts as a spec without a component, not as a component.
+  if (entry != null && typeof entry === "object" && ("component" in entry || "props" in entry)) {
+    return (entry as ComponentSpec).component;
   }
   // A bare component: a function, a class, or a memo/forwardRef exotic.
   return entry as ComponentType<never> | undefined;
