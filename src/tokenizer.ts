@@ -1,20 +1,16 @@
 /**
  * Incremental, resumable JSX tokenizer (PLAN.md §4.2).
  *
- * A character-level state machine that consumes as much of each chunk as it can
- * and **retains partial state across chunk boundaries**: it can be cut off
- * mid-tag, mid-attribute, or mid-text and resume cleanly when more characters
- * arrive. The key correctness property (PLAN.md §5) is that the emitted token
- * stream does not depend on how the input is split into chunks.
+ * A character-level state machine that retains partial state across chunk
+ * boundaries: it can be cut off mid-tag, mid-attribute, or mid-text and resume
+ * cleanly when more characters arrive. The key correctness property
+ * (PLAN.md §5) is that the emitted token stream does not depend on how the
+ * input is split into chunks.
  *
- * The tokenizer additionally exposes {@link Tokenizer.getPending}, describing
- * the half-read construct at the cursor. Only partial *text* is renderable; a
- * partial tag/attribute contributes nothing visible (it is hidden until it
- * completes), which is what the frontier model in PLAN.md §1 relies on.
- *
- * Expression containers (`{ ... }`) are handled in Phase 5; this phase covers
- * text, elements, fragments, attributes (string + boolean shorthand),
- * self-closing tags, and closing tags.
+ * {@link Tokenizer.getPending} describes the half-read construct at the
+ * cursor. Only partial *text* is renderable; a partial tag/attribute
+ * contributes nothing visible until it completes, which is what the frontier
+ * model in PLAN.md §1 relies on.
  */
 
 /**
@@ -63,7 +59,7 @@ export type Token =
   | { type: "expr"; raw: string; loc: SourceLocation };
 
 /** The half-read construct at the cursor; see PLAN.md §1. */
-export type Partial =
+export type Pending =
   /** Nothing renderable is pending (idle, or mid-tag/-attribute). */
   | { type: "none" }
   /** A run of child text accumulated so far but not yet terminated. */
@@ -119,13 +115,11 @@ interface Anchor {
  */
 export class Tokenizer {
   private state: State = State.Text;
-  /** Accumulated child text (State.Text). */
+  /** Accumulated child text. */
   private text = "";
   /** Accumulated tag name (open or close). */
   private name = "";
-  /** Accumulated attribute name. */
   private attrName = "";
-  /** Accumulated attribute string value. */
   private attrValue = "";
   /** The quote character opening the current attribute string. */
   private quote = "";
@@ -133,11 +127,10 @@ export class Tokenizer {
   private reconsume = false;
 
   // --- Source position tracking (for SourceLocation on tokens) ---
-  /** 1-based line of the character currently being processed. */
+  // line/column/offset describe the character currently being processed;
+  // column and offset count UTF-16 code units.
   private line = 1;
-  /** 1-based column (UTF-16 code units) of the current character. */
   private column = 1;
-  /** 0-based offset (UTF-16 code units) of the current character. */
   private offset = 0;
   /** Content of the current line so far (capped at {@link MAX_LINE_TEXT}). */
   private lineText = "";
@@ -151,7 +144,7 @@ export class Tokenizer {
   private exprRaw = "";
   /** Brace nesting depth; 0 means the matching `}` has been found. */
   private exprDepth = 0;
-  /** The quote currently open inside the expression (`` empty if none). */
+  /** The quote currently open inside the expression (empty if none). */
   private exprQuote = "";
   /** True if the next expression char is escaped (inside a string). */
   private exprEscape = false;
@@ -228,9 +221,8 @@ export class Tokenizer {
   }
 
   /**
-   * Signal end of input. Flushes any trailing text run. Incomplete tags or
-   * attributes are discarded (they never became renderable); richer recovery
-   * arrives in Phase 7.
+   * Signal end of input. Flushes any trailing text run; an incomplete tag or
+   * attribute is discarded (it never became renderable).
    */
   end(): Token[] {
     const out: Token[] = [];
@@ -242,7 +234,7 @@ export class Tokenizer {
   }
 
   /** The half-read construct at the cursor (PLAN.md §1). */
-  getPending(): Partial {
+  getPending(): Pending {
     if (this.state === State.Text && this.text.length > 0) {
       return { type: "text", value: this.text };
     }
@@ -290,8 +282,6 @@ export class Tokenizer {
       case State.TagName: {
         if (isNameChar(ch)) {
           this.name += ch;
-        } else if (ch === "=") {
-          // Defensive: a name char set excludes `=`; ignore leniently.
         } else {
           out.push({ type: "openTagStart", name: this.name, loc: this.takeTagLoc() });
           this.name = "";

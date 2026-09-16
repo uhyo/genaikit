@@ -11,13 +11,7 @@
 import type { ComponentType, ReactNode } from "react";
 
 import type { ElementAllowlist, JsxErrorEvent, MismatchBehavior, Node, SchemaType } from "./core";
-import {
-  checkProp,
-  createParser,
-  isElementAllowed,
-  resolveVariablePath,
-  resolveVariableType,
-} from "./core";
+import { checkProp, createParser, isElementAllowed, resolveVariableType } from "./core";
 import {
   createRenderer,
   resolveComponentEntry,
@@ -179,10 +173,10 @@ export function createIncrementalJsxParser(
           (options.resolveComponent?.(tag) ?? resolveComponentEntry(options.components?.[tag])) !=
           null
       : undefined,
+    // resolveVariableType consults the declared types and the values; a path
+    // covered by neither is unknown.
     isKnownVariable: options.onJsxError
-      ? (path) =>
-          (options.variables != null && resolveVariablePath(options.variables, path).found) ||
-          (options.variableTypes != null && resolveVariableType(options, path) !== undefined)
+      ? (path) => resolveVariableType(options, path) !== undefined
       : undefined,
     isAllowedElement:
       options.onJsxError && options.elements

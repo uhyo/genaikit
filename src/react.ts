@@ -30,7 +30,7 @@ export function useIncrementalJsx(
   options?: IncrementalJsxParserOptions,
 ): ReactNode {
   // Re-create only when the source identity changes; options are read once at
-  // creation (keep them stable to change them mid-stream is not supported).
+  // creation (changing them mid-stream is not supported).
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const parser = useMemo(() => createIncrementalJsxParser(source, options), [source]);
 
