@@ -73,7 +73,10 @@ The parser is **not** a JavaScript parser. It recognizes a small JSX subset:
   user‑supplied `variables` map — mirroring how component tags resolve through
   `components`. Every path segment is validated against the map's values at
   parse time (a path that would not resolve reports `"unknown-variable"` per
-  §7); `resolveVariablePath` is the shared lookup for both,
+  §7); `resolveVariablePath` is the shared lookup for both. `__proto__` /
+  `constructor` / `prototype` are excluded from the syntax and root names
+  must be own properties of the map, so references cannot escape the
+  predefined data,
 - a nested JSX element/fragment.
 
 Explicitly **out of scope**: computed/bracket member access, function

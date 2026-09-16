@@ -118,6 +118,21 @@ describe("parseExpression — variable references", () => {
     }
     expect(parseVariable).not.toHaveBeenCalled();
   });
+
+  it("rejects __proto__ / constructor / prototype at any position", () => {
+    const parseVariable = vi.fn(variableNode);
+    for (const src of [
+      "__proto__",
+      "constructor",
+      "a.__proto__",
+      "a.__proto__.b",
+      "a.constructor.name",
+      "a.prototype",
+    ]) {
+      expect(parseExpression(src, noJsx, parseVariable)).toBe(UNSUPPORTED_EXPRESSION);
+    }
+    expect(parseVariable).not.toHaveBeenCalled();
+  });
 });
 
 describe("Tokenizer — expression containers", () => {
@@ -220,6 +235,20 @@ describe("resolveVariablePath", () => {
     expect(resolveVariablePath(variables, ["user", "none", "deep"])).toEqual({ found: false });
     expect(resolveVariablePath(variables, ["nothing", "deep"])).toEqual({ found: false });
     expect(resolveVariablePath(variables, [])).toEqual({ found: false });
+  });
+
+  it("refuses forbidden segments and inherited roots (defense in depth)", () => {
+    // The expression parser already rejects these paths; the exported helper
+    // must refuse them too when called directly.
+    expect(resolveVariablePath(variables, ["user", "__proto__"])).toEqual({ found: false });
+    expect(resolveVariablePath(variables, ["user", "constructor"])).toEqual({ found: false });
+    expect(resolveVariablePath(variables, ["title", "constructor", "name"])).toEqual({
+      found: false,
+    });
+    expect(resolveVariablePath(variables, ["__proto__"])).toEqual({ found: false });
+    // Roots must be own properties — Object.prototype members are not predefined.
+    expect(resolveVariablePath(variables, ["toString"])).toEqual({ found: false });
+    expect(resolveVariablePath(variables, ["hasOwnProperty"])).toEqual({ found: false });
   });
 });
 

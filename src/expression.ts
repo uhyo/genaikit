@@ -12,7 +12,7 @@
  * (no import cycle with the tree builder).
  */
 
-import { UNSUPPORTED_EXPRESSION } from "./core";
+import { FORBIDDEN_SEGMENTS, UNSUPPORTED_EXPRESSION } from "./core";
 import type { Node, PropValue } from "./core";
 
 export type ParsedExpression = PropValue | typeof UNSUPPORTED_EXPRESSION;
@@ -56,11 +56,14 @@ export function parseExpression(
 /**
  * Parse a variable reference — a bare identifier (`foo`) or a dot-notation
  * member chain (`foo.bar.baz`, whitespace around dots allowed); undefined if
- * `t` is not exactly one. Bracket access, calls, etc. are out of scope.
+ * `t` is not exactly one. Bracket access, calls, and the
+ * {@link FORBIDDEN_SEGMENTS} are out of scope.
  */
 function parseVariablePath(t: string): string[] | undefined {
   const parts = t.split(".").map((part) => part.trim());
-  return parts.every((part) => IDENTIFIER_RE.test(part)) ? parts : undefined;
+  return parts.every((part) => IDENTIFIER_RE.test(part) && !FORBIDDEN_SEGMENTS.has(part))
+    ? parts
+    : undefined;
 }
 
 function unescape(ch: string | undefined): string {

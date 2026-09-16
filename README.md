@@ -142,7 +142,11 @@ them at parse time: `{user.nmae}` fires an `"unknown-variable"` event the
 moment it is parsed and renders as nothing. Lookup uses `in` semantics
 (prototype chain included; primitives are boxed, so `{title.length}` on a
 string resolves), and a member behind a `null`/`undefined` value is reported
-rather than crashing anything.
+rather than crashing anything. References can never escape the predefined
+data: `__proto__`, `constructor`, and `prototype` are excluded from the
+syntax at any path position (they parse as an unsupported expression), and
+root names must be **own** properties of the map, so inherited
+`Object.prototype` members like `{toString}` never resolve.
 
 ### `createParser(options?)` — `jsx-incremental-parser/core`
 

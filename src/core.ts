@@ -185,13 +185,29 @@ export interface VariableNode {
 }
 
 /**
+ * Path segments that would escape the predefined data (prototype access, the
+ * `Function` constructor). The expression parser excludes them from the
+ * supported subset at any position — such a reference is
+ * `UNSUPPORTED_EXPRESSION` and never reaches the AST — and
+ * {@link resolveVariablePath} refuses them too, as defense in depth.
+ */
+export const FORBIDDEN_SEGMENTS: ReadonlySet<string> = new Set([
+  "__proto__",
+  "constructor",
+  "prototype",
+]);
+
+/**
  * Resolve a {@link VariableNode} dot path against a `variables` map — the one
  * canonical lookup, shared by parse-time validation (`isKnownVariable`) and
  * render-time resolution so the two can never disagree.
  *
- * The root name and each member must be present (`in`, prototype chain
- * included; primitives are boxed, so `title.length` resolves on a string). A
- * missing name/member or a member on `null`/`undefined` is `{ found: false }`.
+ * The root name must be an **own** property of the map (inherited
+ * `Object.prototype` members like `toString` are never "predefined"). Each
+ * member must be present on the previous value (`in`, prototype chain
+ * included; primitives are boxed, so `title.length` resolves on a string),
+ * except the {@link FORBIDDEN_SEGMENTS}, which are always refused. A missing
+ * name/member or a member on `null`/`undefined` is `{ found: false }`.
  * `found: true` still covers a `null`/`undefined` *value* — the path itself is
  * valid.
  */
@@ -200,10 +216,14 @@ export function resolveVariablePath(
   path: readonly string[],
 ): { found: true; value: unknown } | { found: false } {
   const [name, ...members] = path;
-  if (name === undefined || !(name in variables)) return { found: false };
+  if (name === undefined || FORBIDDEN_SEGMENTS.has(name) || !Object.hasOwn(variables, name)) {
+    return { found: false };
+  }
   let value: unknown = variables[name];
   for (const key of members) {
-    if (value == null || !(key in Object(value))) return { found: false };
+    if (FORBIDDEN_SEGMENTS.has(key) || value == null || !(key in Object(value))) {
+      return { found: false };
+    }
     value = (value as Record<string, unknown>)[key];
   }
   return { found: true, value };

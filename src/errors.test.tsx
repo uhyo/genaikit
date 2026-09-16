@@ -177,6 +177,19 @@ describe("Unified JSX error events (onJsxError)", () => {
     expect(collectEvents("<p>{user.name}</p>")).toEqual([]);
   });
 
+  it("treats __proto__ / constructor / prototype access as unsupported, not a variable", () => {
+    const isKnownVariable = vi.fn(() => true);
+    const events = collectEvents("<p>{a.__proto__}{constructor}{a.prototype.b}</p>", {
+      isKnownVariable,
+    });
+    expect(events.map((e) => e.kind)).toEqual([
+      "unsupported-expression",
+      "unsupported-expression",
+      "unsupported-expression",
+    ]);
+    expect(isKnownVariable).not.toHaveBeenCalled();
+  });
+
   it("reports an unsupported child expression with its raw source", () => {
     expect(collectEvents("<p>{foo()}</p>")).toMatchObject([
       {
