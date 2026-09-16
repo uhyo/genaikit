@@ -129,6 +129,23 @@ describe("Tokenizer — emission", () => {
     expect(bare(tokenize("hello"))).toEqual([{ type: "text", value: "hello" }]);
   });
 
+  it("decodes entities in string attribute values", () => {
+    expect(bare(tokenize(`<a title="a &amp; b&#33;" alt='&lt;&nope;&gt;'>`))).toEqual([
+      { type: "openTagStart", name: "a" },
+      { type: "attribute", name: "title", value: { type: "string", value: "a & b!" } },
+      { type: "attribute", name: "alt", value: { type: "string", value: "<&nope;>" } },
+      { type: "openTagEnd" },
+    ]);
+  });
+
+  it("keeps attribute value whitespace raw (only entities are decoded)", () => {
+    expect(bare(tokenize(`<a title="  a\n  b  ">`))).toEqual([
+      { type: "openTagStart", name: "a" },
+      { type: "attribute", name: "title", value: { type: "string", value: "  a\n  b  " } },
+      { type: "openTagEnd" },
+    ]);
+  });
+
   it("tokenizes capitalized component names", () => {
     expect(bare(tokenize("<Card></Card>"))).toEqual([
       { type: "openTagStart", name: "Card" },
@@ -165,6 +182,8 @@ describe("Tokenizer — source locations", () => {
   });
 
   it("tracks lines and columns across newlines", () => {
+    // The indentation-only runs between the tags produce no text tokens
+    // (JSX whitespace rules), but they still advance lines and columns.
     const tokens = tokenize("<div>\n  <p>x</p>\n</div>");
     expect(tokens).toEqual<Token[]>([
       {
@@ -173,7 +192,6 @@ describe("Tokenizer — source locations", () => {
         loc: { line: 1, column: 1, offset: 0, lineText: "<div>" },
       },
       { type: "openTagEnd", loc: { line: 1, column: 5, offset: 4, lineText: "<div>" } },
-      { type: "text", value: "\n  " },
       {
         type: "openTagStart",
         name: "p",
@@ -186,7 +204,6 @@ describe("Tokenizer — source locations", () => {
         name: "p",
         loc: { line: 2, column: 7, offset: 12, lineText: "  <p>x</p>" },
       },
-      { type: "text", value: "\n" },
       {
         type: "closeTag",
         name: "div",
@@ -251,6 +268,108 @@ describe("Tokenizer — source locations", () => {
   });
 });
 
+/** Concatenated text-token values for `input` (normally a single token). */
+function textOf(input: string): string {
+  return tokenize(input)
+    .filter((token) => token.type === "text")
+    .map((token) => token.value)
+    .join("");
+}
+
+describe("Tokenizer — JSX whitespace rules", () => {
+  it("drops indentation-only runs around child elements", () => {
+    expect(bare(tokenize("<div>\n  <p>x</p>\n</div>"))).toEqual([
+      { type: "openTagStart", name: "div" },
+      { type: "openTagEnd" },
+      { type: "openTagStart", name: "p" },
+      { type: "openTagEnd" },
+      { type: "text", value: "x" },
+      { type: "closeTag", name: "p" },
+      { type: "closeTag", name: "div" },
+    ]);
+  });
+
+  it("strips indentation and joins lines with a single space", () => {
+    expect(textOf("<p>hello\n  world</p>")).toBe("hello world");
+    expect(textOf("<p>\n  hello\n  world\n</p>")).toBe("hello world");
+  });
+
+  it("collapses blank lines into the single joining space", () => {
+    expect(textOf("<p>a\n\n\n   b</p>")).toBe("a b");
+  });
+
+  it("drops whitespace at the end of a non-final line", () => {
+    expect(textOf("<p>a  \t \n  b</p>")).toBe("a b");
+  });
+
+  it("keeps whitespace on a single line (start, middle, and end)", () => {
+    expect(textOf("<p>  a  b  </p>")).toBe("  a  b  ");
+    expect(textOf("<p> </p>")).toBe(" ");
+    expect(textOf("<p>a <b>c</b></p>")).toBe("a c");
+  });
+
+  it("converts tabs to spaces", () => {
+    expect(textOf("<p>a\tb</p>")).toBe("a b");
+    expect(textOf("<p>a\t\tb</p>")).toBe("a  b");
+  });
+
+  it("treats CRLF and lone CR as line breaks", () => {
+    expect(textOf("<p>a\r\n  b</p>")).toBe("a b");
+    expect(textOf("<p>a\r  b</p>")).toBe("a b");
+  });
+
+  it("drops a trailing line break at end of input", () => {
+    expect(textOf("a\n")).toBe("a");
+    expect(textOf("a  ")).toBe("a  ");
+  });
+
+  it("keeps non-breaking spaces (they are not JSX whitespace)", () => {
+    expect(textOf("<p>\n  &nbsp;\n</p>")).toBe(" ");
+  });
+});
+
+describe("Tokenizer — entity decoding in text", () => {
+  it("decodes named entities", () => {
+    expect(textOf("<p>a &amp; b</p>")).toBe("a & b");
+    expect(textOf("<p>&lt;div&gt;</p>")).toBe("<div>");
+    expect(textOf("<p>&copy;&nbsp;&hellip;</p>")).toBe("© …");
+  });
+
+  it("decodes numeric entities (decimal and lowercase-x hex, like Babel)", () => {
+    expect(textOf("<p>&#65;&#x41;&#X61;</p>")).toBe("AA&#X61;");
+    expect(textOf("<p>&#x1F600;</p>")).toBe("😀");
+  });
+
+  it("a decoded `<` or `{` is text, not markup", () => {
+    expect(bare(tokenize("<p>&lt;b&gt;&#123;x&#125;</p>"))).toEqual([
+      { type: "openTagStart", name: "p" },
+      { type: "openTagEnd" },
+      { type: "text", value: "<b>{x}" },
+      { type: "closeTag", name: "p" },
+    ]);
+  });
+
+  it("keeps invalid or unknown references verbatim", () => {
+    expect(textOf("<p>&nope; &#; &#xZZ; &#xD800;</p>")).toBe("&nope; &#; &#xZZ; &#xD800;");
+    expect(textOf("<p>a & b &lt c</p>")).toBe("a & b &lt c");
+    expect(textOf("<p>fish &amp chips</p>")).toBe("fish &amp chips");
+  });
+
+  it("flushes an unterminated reference verbatim at a tag or at end of input", () => {
+    expect(textOf("a &amp")).toBe("a &amp");
+    expect(bare(tokenize("<p>a &am</p>"))).toContainEqual({ type: "text", value: "a &am" });
+  });
+
+  it("decoded whitespace goes through the whitespace rules", () => {
+    // `&#32;`/`&#10;`/`&#9;` decode to space / newline / tab, which then
+    // normalize exactly like literal characters (matching Babel's order:
+    // entity decoding happens before whitespace cleaning).
+    expect(textOf("<p>a&#10;  b</p>")).toBe("a b");
+    expect(textOf("<p>a&#9;b</p>")).toBe("a b");
+    expect(textOf("<p>a&#32;&#32;b</p>")).toBe("a  b");
+  });
+});
+
 function pendingAfter(input: string): Pending {
   const tk = new Tokenizer();
   tk.write(input);
@@ -273,6 +392,18 @@ describe("Tokenizer — getPending (frontier)", () => {
   it("reports no pending mid-attribute", () => {
     expect(pendingAfter(`<div title="bo`)).toEqual<Pending>({ type: "none" });
   });
+
+  it("withholds a possibly-incomplete entity from the pending text", () => {
+    expect(pendingAfter("<p>hi &am")).toEqual<Pending>({ type: "text", value: "hi" });
+    expect(pendingAfter("<p>hi &amp;")).toEqual<Pending>({ type: "text", value: "hi &" });
+  });
+
+  it("withholds unresolved whitespace from the pending text", () => {
+    // Whether the parked whitespace survives depends on what follows.
+    expect(pendingAfter("<p>a\n  ")).toEqual<Pending>({ type: "text", value: "a" });
+    expect(pendingAfter("<p>a\n  b")).toEqual<Pending>({ type: "text", value: "a b" });
+    expect(pendingAfter("<p>\n  ")).toEqual<Pending>({ type: "none" });
+  });
 });
 
 describe("Tokenizer — chunking invariance (PLAN §5)", () => {
@@ -290,6 +421,10 @@ describe("Tokenizer — chunking invariance (PLAN §5)", () => {
     `<a t="a<b>{c}">deep</a>`,
     "<div>\n  <p a={1}>x</p>\n  {42}\n</div>",
     "<ul>\n<li>one\n<li>two\n</ul>",
+    "<p>hello\n  world &amp; more</p>",
+    "<div>\n\t<p>&lt;tag&gt; &#x1F600;</p>\n\t \n</div>",
+    "<p>broken &amp and &nope; &#xG; &#</p>",
+    `<a title="a &amp; b">x &amp</a>`,
   ];
 
   for (const input of inputs) {
