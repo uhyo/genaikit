@@ -150,15 +150,27 @@ describe("Unified JSX error events (onJsxError)", () => {
 
   it("reports an unknown variable at parse time via isKnownVariable", () => {
     const events = collectEvents("<p>{known}{user.name}</p>", {
-      isKnownVariable: (name) => name === "known",
+      isKnownVariable: (path) => path[0] === "known",
     });
     expect(events).toMatchObject([
       {
         kind: "unknown-variable",
-        message: 'Unknown variable "user" in {user.name}',
+        message: "Unknown variable reference {user.name}",
         name: "user",
+        path: ["user", "name"],
       },
     ]);
+  });
+
+  it("hands isKnownVariable the full dot path for nested validation", () => {
+    const paths: (readonly string[])[] = [];
+    collectEvents("<p>{a.b.c}{x}</p>", {
+      isKnownVariable: (path) => {
+        paths.push(path);
+        return true;
+      },
+    });
+    expect(paths).toEqual([["a", "b", "c"], ["x"]]);
   });
 
   it("stays silent on variable references without an isKnownVariable probe", () => {
@@ -390,16 +402,37 @@ describe("Unified JSX error events — React adapter wiring", () => {
     ]);
   });
 
-  it("reports a variable missing from the variables map at parse time", async () => {
+  it("validates every path segment against the variables map at parse time", async () => {
     const events: JsxErrorEvent[] = [];
-    const parser = createIncrementalJsxParser(streamOf("<p>{name}{na", "me.x}{nope}</p>"), {
-      variables: { name: "uhyo" },
+    const parser = createIncrementalJsxParser(
+      streamOf("<p>{user.name}{user.na", "me.length}{user.nmae}{nope}</p>"),
+      {
+        variables: { user: { name: "uhyo" } },
+        onJsxError: (e) => events.push(e),
+      },
+    );
+    await parser.done;
+    // {user.name} and {user.name.length} (a boxed string member) resolve;
+    // the typo'd member and the unknown root are both reported.
+    expect(events).toMatchObject([
+      {
+        kind: "unknown-variable",
+        message: "Unknown variable reference {user.nmae}",
+        name: "user",
+        path: ["user", "nmae"],
+      },
+      { kind: "unknown-variable", message: "Unknown variable reference {nope}", name: "nope" },
+    ]);
+  });
+
+  it("reports a member access through a null/undefined intermediate", async () => {
+    const events: JsxErrorEvent[] = [];
+    const parser = createIncrementalJsxParser(streamOf("<p>{user.gone.deep}</p>"), {
+      variables: { user: { gone: null } },
       onJsxError: (e) => events.push(e),
     });
     await parser.done;
-    expect(events).toMatchObject([
-      { kind: "unknown-variable", message: 'Unknown variable "nope" in {nope}', name: "nope" },
-    ]);
+    expect(events).toMatchObject([{ kind: "unknown-variable", path: ["user", "gone", "deep"] }]);
   });
 
   it("does not probe resolveComponent at parse time without an onJsxError listener", async () => {

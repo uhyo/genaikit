@@ -62,10 +62,12 @@ export interface TreeBuilderOptions {
   isKnownComponent?: ((tag: string) => boolean) | undefined;
   /**
    * Optional resolver check: when provided, a variable reference expression
-   * (`{foo}` / `{foo.bar}`) whose root name it does not recognize emits an
-   * `"unknown-variable"` event. Recovery/rendering is unaffected.
+   * (`{foo}` / `{foo.bar}`) it rejects emits an `"unknown-variable"` event.
+   * It receives the full dot path, so it may validate at any depth — root
+   * name only (`path[0]`), or every segment (see `resolveVariablePath`).
+   * Recovery/rendering is unaffected.
    */
-  isKnownVariable?: ((name: string) => boolean) | undefined;
+  isKnownVariable?: ((path: readonly string[]) => boolean) | undefined;
 }
 
 /** The single frontier marker has a fixed key (only ever one exists at a time). */
@@ -83,7 +85,7 @@ export class TreeBuilder {
   private readonly mismatchedTag: MismatchBehavior;
   private readonly onJsxError: JsxErrorListener | undefined;
   private readonly isKnownComponent: ((tag: string) => boolean) | undefined;
-  private readonly isKnownVariable: ((name: string) => boolean) | undefined;
+  private readonly isKnownVariable: ((path: readonly string[]) => boolean) | undefined;
 
   constructor(options: TreeBuilderOptions = {}) {
     this.mismatchedTag = options.mismatchedTag ?? "autoclose";
@@ -217,18 +219,19 @@ export class TreeBuilder {
     return value;
   }
 
-  /** Materialize a variable reference node, reporting an unknown root name. */
-  private createVariable(path: readonly string[], loc: SourceLocation): VariableNode {
-    const name = path[0]!;
-    if (this.onJsxError && this.isKnownVariable && !this.isKnownVariable(name)) {
+  /** Materialize a variable reference node, reporting a rejected path. */
+  private createVariable(rawPath: readonly string[], loc: SourceLocation): VariableNode {
+    const path = Object.freeze(rawPath);
+    if (this.onJsxError && this.isKnownVariable && !this.isKnownVariable(path)) {
       this.onJsxError({
         kind: "unknown-variable",
-        message: `Unknown variable "${name}" in {${path.join(".")}}`,
-        name,
+        message: `Unknown variable reference {${path.join(".")}}`,
+        name: path[0]!,
+        path,
         location: loc,
       });
     }
-    const node: VariableNode = { kind: "variable", id: this.nextId++, path: Object.freeze(path) };
+    const node: VariableNode = { kind: "variable", id: this.nextId++, path };
     return freeze(node);
   }
 

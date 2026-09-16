@@ -136,9 +136,13 @@ streaming `TextDecoder` — the common `fetch().body` case),
 
 The `components` map also acts as a **security allowlist** for untrusted
 AI-generated output — unknown components do not render by default. The
-`variables` map works the same way for `{name}` expressions: only predefined
-names resolve (member access walks the value null-safely; a missing name or
-member renders as nothing).
+`variables` map works the same way for `{name}` expressions, and because it
+holds the actual values, **every segment** of a dot path is validated against
+them at parse time: `{user.nmae}` fires an `"unknown-variable"` event the
+moment it is parsed and renders as nothing. Lookup uses `in` semantics
+(prototype chain included; primitives are boxed, so `{title.length}` on a
+string resolves), and a member behind a `null`/`undefined` value is reported
+rather than crashing anything.
 
 ### `createParser(options?)` — `jsx-incremental-parser/core`
 
@@ -160,9 +164,14 @@ adapter. Since the core knows nothing about React components, pass
 `isKnownComponent: (tag) => boolean` if you want `"unknown-component"` events;
 the exported `isComponentName(tag)` helper tells you which tags are
 component-like (Capitalized or dotted). Likewise, pass
-`isKnownVariable: (name) => boolean` for `"unknown-variable"` events; the core
-emits variable references as `VariableNode`s (a dot-notation `path`) and leaves
-resolving them to the consumer.
+`isKnownVariable: (path: readonly string[]) => boolean` for
+`"unknown-variable"` events — it receives the full dot path, so you can
+validate the root name only (`path[0]`) or every segment. The core emits
+variable references as `VariableNode`s (a dot-notation `path`) and leaves
+resolving them to the consumer; the exported
+`resolveVariablePath(variables, path)` helper implements the canonical lookup
+(the React adapter uses it for both parse-time validation and render-time
+resolution, so the two always agree).
 
 ## Error handling
 
@@ -214,7 +223,7 @@ human-readable `message` and a `location`:
 | -------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------ |
 | `"mismatched-tag"`         | `tag`, `expected`           | A closing tag doesn't match the innermost open element (`expected: null` = stray close).         |
 | `"unknown-component"`      | `tag`                       | A Capitalized/dotted tag fails `resolveComponent` / `components` resolution, at open time.       |
-| `"unknown-variable"`       | `name`                      | A `{ }` variable reference whose root name is not in `variables`.                                |
+| `"unknown-variable"`       | `name`, `path`              | A `{ }` variable reference that does not resolve through `variables` (any segment).              |
 | `"unsupported-expression"` | `expression`, `attribute?`  | A `{ }` expression falls outside the supported subset.                                           |
 | `"unclosed-tag"`           | `tag`                       | An element is still open when the stream ends (reported innermost first, then auto-closed).      |
 

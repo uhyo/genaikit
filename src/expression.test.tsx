@@ -2,7 +2,7 @@ import { createElement, Fragment, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { UNSUPPORTED_EXPRESSION, type Node } from "./core";
+import { resolveVariablePath, UNSUPPORTED_EXPRESSION, type Node } from "./core";
 import { parseExpression } from "./expression";
 import { createRenderer, type RenderOptions } from "./render";
 import { Tokenizer, type SourceLocation, type Token } from "./tokenizer";
@@ -40,6 +40,7 @@ function Box({ label }: { label?: ReactNode }): ReactNode {
 }
 
 const noJsx = (): undefined => undefined;
+const variableNode = (path: readonly string[]): Node => ({ kind: "variable", id: 0, path });
 
 describe("parseExpression — literals", () => {
   it("parses numbers", () => {
@@ -87,8 +88,6 @@ describe("parseExpression — literals", () => {
 });
 
 describe("parseExpression — variable references", () => {
-  const variableNode = (path: readonly string[]): Node => ({ kind: "variable", id: 0, path });
-
   it("delegates identifiers and dot paths to the parseVariable callback", () => {
     const parseVariable = vi.fn(variableNode);
     expect(parseExpression("user", noJsx, parseVariable)).toMatchObject({ kind: "variable" });
@@ -177,6 +176,50 @@ describe("React adapter — expressions in props", () => {
     expect(toHtml(`<Box label={<b>hi</b>}/>`, { components: { Box } })).toBe(
       `<div class="box"><b>hi</b></div>`,
     );
+  });
+});
+
+describe("resolveVariablePath", () => {
+  const variables = {
+    user: { profile: { city: "Tokyo" }, none: null },
+    title: "abc",
+    zero: 0,
+    nothing: undefined,
+  };
+
+  it("resolves roots and nested members", () => {
+    expect(resolveVariablePath(variables, ["title"])).toEqual({ found: true, value: "abc" });
+    expect(resolveVariablePath(variables, ["user", "profile", "city"])).toEqual({
+      found: true,
+      value: "Tokyo",
+    });
+    expect(resolveVariablePath(variables, ["zero"])).toEqual({ found: true, value: 0 });
+  });
+
+  it("finds members through boxed primitives and the prototype chain", () => {
+    expect(resolveVariablePath(variables, ["title", "length"])).toEqual({
+      found: true,
+      value: 3,
+    });
+  });
+
+  it("treats a path to a nullish value as found — the path itself is valid", () => {
+    expect(resolveVariablePath(variables, ["user", "none"])).toEqual({
+      found: true,
+      value: null,
+    });
+    expect(resolveVariablePath(variables, ["nothing"])).toEqual({
+      found: true,
+      value: undefined,
+    });
+  });
+
+  it("misses unknown roots, missing members, and members of nullish values", () => {
+    expect(resolveVariablePath(variables, ["nope"])).toEqual({ found: false });
+    expect(resolveVariablePath(variables, ["user", "missing"])).toEqual({ found: false });
+    expect(resolveVariablePath(variables, ["user", "none", "deep"])).toEqual({ found: false });
+    expect(resolveVariablePath(variables, ["nothing", "deep"])).toEqual({ found: false });
+    expect(resolveVariablePath(variables, [])).toEqual({ found: false });
   });
 });
 

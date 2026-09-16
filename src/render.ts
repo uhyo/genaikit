@@ -18,7 +18,7 @@
 import { createElement, Fragment } from "react";
 import type { ComponentType, ReactNode } from "react";
 
-import { isComponentName, UNSUPPORTED_EXPRESSION } from "./core";
+import { isComponentName, resolveVariablePath, UNSUPPORTED_EXPRESSION } from "./core";
 import type { ElementNode, Node, VariableNode } from "./core";
 
 /**
@@ -130,19 +130,14 @@ export function createRenderer(options: RenderOptions = {}): Renderer {
 
   /**
    * Walk a variable reference's dot path through the `variables` map. An
-   * unknown root name (already reported at parse time via "unknown-variable")
-   * and a `null`/`undefined` intermediate both resolve to `undefined`.
+   * unresolvable path (already reported at parse time via "unknown-variable")
+   * renders as `undefined` — same lookup semantics as the parse-time check.
    */
   function resolveVariable(node: VariableNode): unknown {
     const variables = options.variables;
-    const [name, ...members] = node.path;
-    if (name === undefined || !variables || !(name in variables)) return undefined;
-    let value: unknown = variables[name];
-    for (const key of members) {
-      if (value == null) return undefined;
-      value = (value as Record<string, unknown>)[key];
-    }
-    return value;
+    if (!variables) return undefined;
+    const result = resolveVariablePath(variables, node.path);
+    return result.found ? result.value : undefined;
   }
 
   function resolveType(tag: string): Resolved {

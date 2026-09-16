@@ -53,11 +53,13 @@ export type JsxErrorEvent =
       location: SourceLocation;
     }
   | {
-      /** A `{ }` variable reference whose root name is not a known variable. */
+      /** A `{ }` variable reference rejected by the `isKnownVariable` probe. */
       kind: "unknown-variable";
       message: string;
-      /** The unresolved root identifier. */
+      /** The root identifier of the reference. */
       name: string;
+      /** The full dot-notation path (`{a.b.c}` → `["a","b","c"]`). */
+      path: readonly string[];
       /** Where the expression starts (its `{`). */
       location: SourceLocation;
     }
@@ -180,6 +182,31 @@ export interface VariableNode {
   id: number;
   /** Root identifier followed by its member accesses (`a.b.c` → `["a","b","c"]`). */
   path: readonly string[];
+}
+
+/**
+ * Resolve a {@link VariableNode} dot path against a `variables` map — the one
+ * canonical lookup, shared by parse-time validation (`isKnownVariable`) and
+ * render-time resolution so the two can never disagree.
+ *
+ * The root name and each member must be present (`in`, prototype chain
+ * included; primitives are boxed, so `title.length` resolves on a string). A
+ * missing name/member or a member on `null`/`undefined` is `{ found: false }`.
+ * `found: true` still covers a `null`/`undefined` *value* — the path itself is
+ * valid.
+ */
+export function resolveVariablePath(
+  variables: Record<string, unknown>,
+  path: readonly string[],
+): { found: true; value: unknown } | { found: false } {
+  const [name, ...members] = path;
+  if (name === undefined || !(name in variables)) return { found: false };
+  let value: unknown = variables[name];
+  for (const key of members) {
+    if (value == null || !(key in Object(value))) return { found: false };
+    value = (value as Record<string, unknown>)[key];
+  }
+  return { found: true, value };
 }
 
 /**

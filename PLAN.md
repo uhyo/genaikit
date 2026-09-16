@@ -71,7 +71,9 @@ The parser is **not** a JavaScript parser. It recognizes a small JSX subset:
 - a **predefined variable** reference: a bare identifier (`user`) or dot‑notation
   member access (`user.name.first`), resolved at render time against a
   user‑supplied `variables` map — mirroring how component tags resolve through
-  `components` (unknown root names report `"unknown-variable"` per §7),
+  `components`. Every path segment is validated against the map's values at
+  parse time (a path that would not resolve reports `"unknown-variable"` per
+  §7); `resolveVariablePath` is the shared lookup for both,
 - a nested JSX element/fragment.
 
 Explicitly **out of scope**: computed/bracket member access, function
