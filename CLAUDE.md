@@ -4,16 +4,46 @@ Guidance for working in this repository.
 
 ## What this is
 
-`jsx-incremental-parser` incrementally parses a **streamed JSX string** into a
-**live React tree**, rendering the not-yet-arrived part as a single `<Pending />`
-placeholder at the streaming frontier. See [`GOAL.md`](./GOAL.md) for the
-original goal, [`PLAN.md`](./PLAN.md) for the full design, and
-[`README.md`](./README.md) for the public API.
+A **pnpm monorepo** hosting a Generative UI toolchain. Workspace layout:
 
-## Architecture
+- `packages/*` — published libraries. Currently:
+  - [`packages/jsx-incremental-parser`](./packages/jsx-incremental-parser) —
+    incrementally parses a **streamed JSX string** into a **live React tree**,
+    rendering the not-yet-arrived part as a single `<Pending />` placeholder at
+    the streaming frontier.
+- `apps/*` — private, unpublished apps. Currently:
+  - [`apps/demo`](./apps/demo) — Vite playground that streams sample JSX and
+    renders the live tree (deployable to Cloudflare Workers).
+
+Per-package docs: the parser's original goal is
+[`packages/jsx-incremental-parser/GOAL.md`](./packages/jsx-incremental-parser/GOAL.md),
+the full design is
+[`packages/jsx-incremental-parser/PLAN.md`](./packages/jsx-incremental-parser/PLAN.md),
+and the public API is its
+[`README.md`](./packages/jsx-incremental-parser/README.md).
+
+## Monorepo conventions
+
+- Single lockfile at the repo root; `pnpm install` there installs everything.
+  Workspace members declare each other with `workspace:*`.
+- **Lint/format are root-level** (`pnpm run lint` → `oxlint`, `pnpm run format`
+  → `oxfmt`, configs `.oxlintrc.json` / `.oxfmtrc.json` at the root, covering
+  the whole repo). Packages don't have their own lint/format scripts.
+- **Typecheck/test/build are per-package**; root scripts fan out with
+  `pnpm -r run <script>` (packages lacking the script are skipped). Package
+  tsconfigs extend the root [`tsconfig.base.json`](./tsconfig.base.json)
+  (the demo app keeps a looser standalone tsconfig).
+- Target a single package with `pnpm --filter <package-name> <script>`.
+- New published packages go in `packages/<name>` with their own `package.json`
+  (`repository.directory` set), `tsconfig.json` extending the base, `tsdown`
+  build, colocated Vitest tests, and a `LICENSE` copy. Add `publint`/`attw`
+  scripts so root `pnpm run publint` / `pnpm run attw` cover them.
+
+## Architecture: `packages/jsx-incremental-parser`
 
 The pipeline is a chain of small, independently testable modules
-(`source → tokenizer → tree builder → store → React adapter`):
+(`source → tokenizer → tree builder → store → React adapter`). Paths below are
+relative to `packages/jsx-incremental-parser/`:
 
 | File | Role |
 | ---- | ---- |
@@ -46,7 +76,7 @@ The pipeline is a chain of small, independently testable modules
 - Nested JSX *inside an expression* is buffered until its `}` (it appears at once
   rather than streaming its own inner frontier).
 
-## Subpath exports
+### Subpath exports
 
 `.` (React adapter), `./react` (hook), `./core` (framework-agnostic). The
 `./core` entry must stay React-free — don't import `react`/`render.ts` from
@@ -56,37 +86,40 @@ The pipeline is a chain of small, independently testable modules
 ## Development
 
 ```sh
-pnpm install
+pnpm install     # at the repo root — installs the whole workspace
 pnpm run check   # lint + format:check + typecheck + test (run before pushing)
-pnpm test        # vitest run
-pnpm run build   # tsdown (ESM + d.ts)
+pnpm test        # all package tests (vitest run per package)
+pnpm run build   # build all packages
 ```
 
 Tooling: TypeScript (strict), Vitest + happy-dom, oxlint + oxfmt, tsdown,
 publint + attw. Each `src/*.ts(x)` has a colocated `*.test.ts(x)`; the fuzz suite
-(`src/fuzz.test.ts`) checks chunk-independence over generated input.
+(`packages/jsx-incremental-parser/src/fuzz.test.ts`) checks chunk-independence
+over generated input.
 
 ## Release flow (Changesets)
 
 Releases are automated by [`.github/workflows/release.yml`](./.github/workflows/release.yml)
-on pushes to `master`.
+on pushes to `master`. Changesets is workspace-aware: it versions and publishes
+every non-private package with pending changesets (private workspace members
+like `apps/demo` are never versioned or published).
 
 1. **In a PR that changes published behavior**, add a changeset:
    ```sh
    pnpm changeset
    ```
-   Pick the bump (patch/minor/major) and describe the change. Commit the
-   generated `.changeset/*.md` file with the PR.
+   Pick the affected package(s) and bump (patch/minor/major) and describe the
+   change. Commit the generated `.changeset/*.md` file with the PR.
 2. **On merge to `master`**, the release workflow opens (or updates) a
-   "Version Packages" PR that applies the pending changesets, bumps the version,
-   and updates `CHANGELOG.md`.
+   "Version Packages" PR that applies the pending changesets, bumps the
+   versions, and updates each package's `CHANGELOG.md`.
 3. **Merging the "Version Packages" PR** publishes to npm (`changeset publish`,
    public access, with provenance).
 
 Publishing uses **npm trusted publishing (OIDC)** — no `NPM_TOKEN` secret. The
 workflow's `id-token: write` permission lets npm authenticate via OIDC. This
-requires a one-time setup on npmjs.com: configure the package's trusted
-publisher to this repo and the `release.yml` workflow. Provenance is generated
-automatically.
+requires a one-time setup on npmjs.com **per package**: configure the package's
+trusted publisher to this repo and the `release.yml` workflow. Provenance is
+generated automatically.
 
-Don't bump the version in `package.json` by hand — let Changesets do it.
+Don't bump versions in `package.json` files by hand — let Changesets do it.

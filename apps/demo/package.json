@@ -7,15 +7,18 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "deploy": "vite build && wrangler deploy",
     "cf:preview": "vite build && wrangler dev"
   },
   "dependencies": {
+    "jsx-incremental-parser": "workspace:*",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },
   "devDependencies": {
+    "@types/node": "26.0.0",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "typescript": "6.0.3",

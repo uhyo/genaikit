@@ -1,6 +1,6 @@
 # jsx-incremental-parser — live demo
 
-An interactive playground for [`jsx-incremental-parser`](../). It streams a JSX
+An interactive playground for [`jsx-incremental-parser`](../../packages/jsx-incremental-parser). It streams a JSX
 string into the parser **a few characters at a time** (the way an LLM streams
 tokens) and renders the resulting **live React tree** side-by-side with the raw
 text. Everything that hasn't arrived yet is the single `<Pending />` frontier,
@@ -25,13 +25,13 @@ the right.
 
 ## Run it
 
-The demo imports the library straight from `../src` via a Vite alias, so there's
-no build step — edits to the library show up live.
+The demo imports the library straight from the workspace source
+(`../../packages/jsx-incremental-parser/src`) via a Vite alias, so there's no
+build step — edits to the library show up live.
 
 ```sh
-cd demo
-pnpm install
-pnpm dev
+pnpm install          # once, at the repo root
+pnpm --filter jsx-incremental-parser-demo dev
 ```
 
 Then open the printed URL. Pick a sample (or edit the JSX), choose a speed, and
@@ -55,9 +55,8 @@ export CLOUDFLARE_API_TOKEN=…       # token with "Edit Workers" permission
 Then build + publish:
 
 ```sh
-cd demo
-pnpm install
-pnpm run deploy                     # = vite build && wrangler deploy
+pnpm install          # once, at the repo root
+pnpm --filter jsx-incremental-parser-demo run deploy   # = vite build && wrangler deploy
 ```
 
 Wrangler prints the live URL (`https://jsx-incremental-parser-demo.<account>.workers.dev`).

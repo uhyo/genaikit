@@ -15,9 +15,9 @@
     "noEmit": true,
     "types": ["node"],
     "paths": {
-      "jsx-incremental-parser/react": ["../src/react.ts"],
-      "jsx-incremental-parser/core": ["../src/core.ts"],
-      "jsx-incremental-parser": ["../src/index.ts"]
+      "jsx-incremental-parser/react": ["../../packages/jsx-incremental-parser/src/react.ts"],
+      "jsx-incremental-parser/core": ["../../packages/jsx-incremental-parser/src/core.ts"],
+      "jsx-incremental-parser": ["../../packages/jsx-incremental-parser/src/index.ts"]
     }
   },
   "include": ["src", "vite.config.ts"]
