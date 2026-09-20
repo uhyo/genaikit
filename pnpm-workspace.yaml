@@ -1,0 +1,10 @@
+packages:
+  - packages/*
+  - apps/*
+
+# pnpm v10 blocks dependency postinstall scripts by default; these are the
+# ones we trust (esbuild/workerd for the Vite demo, sharp via wrangler).
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+  - workerd
