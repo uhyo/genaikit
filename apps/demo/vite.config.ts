@@ -18,6 +18,8 @@ export default defineConfig({
       ),
       "jsx-incremental-parser/core": fromHere("../../packages/jsx-incremental-parser/src/core.ts"),
       "jsx-incremental-parser": fromHere("../../packages/jsx-incremental-parser/src/index.ts"),
+      "genuikit/react": fromHere("../../packages/genuikit/src/react.ts"),
+      genuikit: fromHere("../../packages/genuikit/src/index.ts"),
     },
     // The aliased library source imports `react`/`react-dom` too.
     // Without deduping, the production build resolves those to a separate copy

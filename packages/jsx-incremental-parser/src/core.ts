@@ -31,6 +31,10 @@ export type {
   SchemaOptions,
   SchemaType,
 } from "./schema";
+// The stream driver is React-free too; consumers building their own adapter
+// (or pre-processing the stream before parsing) can reuse the normalization.
+export { pumpStream } from "./stream";
+export type { JsxStreamSource, StreamHandle, StreamSink } from "./stream";
 
 /**
  * A structured, **recoverable** JSX-level error event (PLAN.md §7), emitted

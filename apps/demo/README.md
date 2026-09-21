@@ -1,10 +1,20 @@
-# jsx-incremental-parser — live demo
+# Generative UI toolchain — live demo
 
-An interactive playground for [`jsx-incremental-parser`](../../packages/jsx-incremental-parser). It streams a JSX
-string into the parser **a few characters at a time** (the way an LLM streams
-tokens) and renders the resulting **live React tree** side-by-side with the raw
-text. Everything that hasn't arrived yet is the single `<Pending />` frontier,
-shown here as a shimmer.
+An interactive playground for the workspace libraries. It streams a source
+**a few characters at a time** (the way an LLM streams tokens) and renders the
+resulting **live React tree** side-by-side with the raw text. Everything that
+hasn't arrived yet is the single `<Pending />` frontier, shown here as a
+shimmer. Two modes:
+
+- **genuikit · Markdown + ui+jsx** (default) — streams a
+  [`genuikit`](../../packages/genuikit) message: Markdown where
+  ```` ```ui+jsx ```` code fences render as live, interactive UI. Clicking a
+  streamed `actions.*` handler logs the canonical **next request to the AI**
+  (action names are model-defined — dynamic actions, the default), and a
+  malformed sample shows the **feedback report** (`getIssueReport()`) ready
+  to send back to the model.
+- **parser · raw JSX** — streams a bare JSX string straight into
+  [`jsx-incremental-parser`](../../packages/jsx-incremental-parser).
 
 The layout is two side-by-side panes: the **received stream** (raw text, growing
 with a blinking caret) on the left, and the **live React tree** it parses into on
@@ -14,20 +24,25 @@ the right.
 
 - **Incremental rendering** — settled subtrees stay put while only the open path
   and the `<Pending />` shimmer update each chunk.
-- **The single frontier** — exactly one shimmer at a time, nested in the
-  innermost open element.
-- **Lenient parsing** — the "Malformed" sample omits close tags and uses an
-  unsupported `{ }` expression; the parser recovers and reports structured
-  events via `onJsxError` instead of throwing.
+- **The single frontier** — exactly one shimmer at a time: after the Markdown
+  when the frontier is in prose, or nested in the innermost open element of a
+  streaming UI block.
+- **Lenient parsing** — the malformed samples omit close tags, reference
+  unknown components, and use unsupported `{ }` expressions; the tree recovers
+  and the problems surface as structured events (`onJsxError` in parser mode,
+  issues + the feedback report in genuikit mode) instead of throwing.
 - **Components as an allowlist** — only the components in
   [`src/components.tsx`](./src/components.tsx) can be instantiated by the streamed
-  JSX; anything else degrades to `<Pending />`.
+  source; anything else degrades to `<Pending />`.
+- **The actions loop** — `onClick={actions.addToCart}` in a sample wires a real
+  click handler; firing it emits "The `actions.addToCart` action was fired by
+  the user.", shown in the action log.
 
 ## Run it
 
-The demo imports the library straight from the workspace source
-(`../../packages/jsx-incremental-parser/src`) via a Vite alias, so there's no
-build step — edits to the library show up live.
+The demo imports both libraries straight from the workspace source
+(`../../packages/*/src`) via Vite aliases, so there's no build step — edits to
+the libraries show up live.
 
 ```sh
 pnpm install          # once, at the repo root
@@ -64,6 +79,22 @@ To preview the production build on the Workers runtime locally first, run
 `pnpm cf:preview` (`vite build && wrangler dev`).
 
 ## How it's wired
+
+genuikit mode:
+
+```tsx
+import { useGenUiMessage } from "genuikit/react";
+
+const { node, message } = useGenUiMessage(stream, {
+  components: demoComponents,      // allowlist + renderers for ui+jsx blocks
+  Pending: Shimmer,                // frontier placeholder
+  onAction: (event) => { /* event.message -> the action log */ },
+  onIssue: (issue) => { /* surfaced live in the UI */ },
+});
+// on message.done: message.getIssueReport() -> the feedback panel
+```
+
+Parser mode:
 
 ```tsx
 import { useIncrementalJsx } from "jsx-incremental-parser/react";

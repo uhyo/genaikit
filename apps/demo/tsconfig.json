@@ -17,7 +17,9 @@
     "paths": {
       "jsx-incremental-parser/react": ["../../packages/jsx-incremental-parser/src/react.ts"],
       "jsx-incremental-parser/core": ["../../packages/jsx-incremental-parser/src/core.ts"],
-      "jsx-incremental-parser": ["../../packages/jsx-incremental-parser/src/index.ts"]
+      "jsx-incremental-parser": ["../../packages/jsx-incremental-parser/src/index.ts"],
+      "genuikit/react": ["../../packages/genuikit/src/react.ts"],
+      "genuikit": ["../../packages/genuikit/src/index.ts"]
     }
   },
   "include": ["src", "vite.config.ts"]

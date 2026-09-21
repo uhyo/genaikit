@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    // Typecheck/test resolve the workspace dependency straight to its source,
+    // so no build step is needed first (same pattern as apps/demo). The tsdown
+    // build ignores these paths and keeps the dependency external.
+    "paths": {
+      "jsx-incremental-parser/react": ["../jsx-incremental-parser/src/react.ts"],
+      "jsx-incremental-parser/core": ["../jsx-incremental-parser/src/core.ts"],
+      "jsx-incremental-parser": ["../jsx-incremental-parser/src/index.ts"]
+    }
+  },
+  "include": ["src", "tsdown.config.ts", "vitest.config.ts"]
+}
