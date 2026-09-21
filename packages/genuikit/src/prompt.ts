@@ -18,6 +18,11 @@ export interface GenUiPromptOptions extends PromptContractOptions {
    * the predefined variables as `actions` (each entry typed `"function"`).
    */
   actions?: ActionsDefinition;
+  /**
+   * Same value as `GenUiMessageOptions.dynamicActions`: tell the model it may
+   * define its own actions by referencing `actions.<name>` with any name.
+   */
+  dynamicActions?: boolean;
 }
 
 /**
@@ -26,7 +31,8 @@ export interface GenUiPromptOptions extends PromptContractOptions {
  * and the exact JSX subset/schema the blocks must follow.
  */
 export function formatGenUiPrompt(options: GenUiPromptOptions = {}): string {
-  const { actions, variables, variableTypes, ...contract } = options;
+  const { actions, dynamicActions, variables, variableTypes, ...contract } = options;
+  const dynamic = dynamicActions === true;
 
   const lines: string[] = [
     "Your messages are rendered as Markdown with embedded interactive UI.",
@@ -48,23 +54,38 @@ export function formatGenUiPrompt(options: GenUiPromptOptions = {}): string {
   ];
 
   const actionNames = Object.keys(actions ?? {});
-  if (actionNames.length > 0) {
+  const hasActions = actionNames.length > 0 || dynamic;
+  if (hasActions) {
     lines.push(
       "",
       "## Actions",
       "- The predefined variable `actions` connects the UI back to this conversation.",
-      `- Available actions: ${actionNames.map((name) => `\`actions.${name}\``).join(", ")}.`,
-      `- Pass one wherever a function prop is expected: onClick={actions.${actionNames[0]}}.`,
+    );
+    if (actionNames.length > 0) {
+      lines.push(
+        `- Available actions: ${actionNames.map((name) => `\`actions.${name}\``).join(", ")}.`,
+      );
+    }
+    if (dynamic) {
+      lines.push(
+        "- You may also define your own actions: use `actions.<name>` with any",
+        "  descriptive camelCase name — no declaration is needed, and each distinct",
+        "  name is a distinct action.",
+      );
+    }
+    const example = actionNames[0] ?? "submitForm";
+    lines.push(
+      `- Pass one wherever a function prop is expected: onClick={actions.${example}}.`,
       "- When the user triggers one, the next user message reports it, e.g.:",
-      `  "The \`actions.${actionNames[0]}\` action was fired by the user."`,
+      `  "The \`actions.${example}\` action was fired by the user."`,
     );
   }
 
   // Merge the actions into the contract's predefined variables, exactly as
   // createGenUiMessage merges them into the parser's.
-  const mergedVariables = actions ? { ...variables, actions: {} } : variables;
+  const mergedVariables = hasActions ? { ...variables, actions: {} } : variables;
   const actionsType: SchemaType = Object.fromEntries(actionNames.map((name) => [name, "function"]));
-  const mergedTypes = actions ? { ...variableTypes, actions: actionsType } : variableTypes;
+  const mergedTypes = hasActions ? { ...variableTypes, actions: actionsType } : variableTypes;
 
   lines.push(
     "",

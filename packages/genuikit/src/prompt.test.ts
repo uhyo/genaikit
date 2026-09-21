@@ -42,3 +42,27 @@ describe("formatGenUiPrompt", () => {
     expect(prompt).toContain("- {actions} —");
   });
 });
+
+describe("formatGenUiPrompt — dynamic actions", () => {
+  it("tells the model it may define its own actions", () => {
+    const prompt = formatGenUiPrompt({ dynamicActions: true });
+    expect(prompt).toContain("## Actions");
+    expect(prompt).toContain("define your own actions");
+    expect(prompt).toContain("`actions.<name>`");
+    expect(prompt).toContain("onClick={actions.submitForm}");
+    expect(prompt).toContain('"The `actions.submitForm` action was fired by the user."');
+    expect(prompt).toContain("- {actions} —");
+  });
+
+  it("lists declared actions alongside the dynamic note, using one as the example", () => {
+    const prompt = formatGenUiPrompt({ actions: { submit: true }, dynamicActions: true });
+    expect(prompt).toContain("- Available actions: `actions.submit`.");
+    expect(prompt).toContain("define your own actions");
+    expect(prompt).toContain("onClick={actions.submit}");
+  });
+
+  it("does not mention self-defined actions by default", () => {
+    const prompt = formatGenUiPrompt({ actions: { submit: true } });
+    expect(prompt).not.toContain("define your own actions");
+  });
+});

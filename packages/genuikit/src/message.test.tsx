@@ -1,4 +1,4 @@
-import { act, render } from "@testing-library/react";
+import { act, cleanup, render } from "@testing-library/react";
 import { Children } from "react";
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -24,6 +24,9 @@ const settle = async (): Promise<void> => {
 };
 
 afterEach(() => {
+  // With `globals: false`, testing-library's automatic cleanup does not
+  // register; unmount explicitly so renders don't leak across tests.
+  cleanup();
   vi.restoreAllMocks();
 });
 
@@ -142,6 +145,62 @@ describe("createGenUiMessage — actions", () => {
     await message.done;
     expect(issues.map((i) => i.kind)).toEqual(["jsx-error"]);
     expect(message.getIssueReport()).toContain("actions.launch");
+  });
+
+  it("accepts model-defined actions when dynamicActions is on", async () => {
+    const fired: { name: string; declared: boolean; message: string }[] = [];
+    const message = createGenUiMessage(
+      iterableFrom(["```ui+jsx\n<button onClick={actions.choosePlanPro}>Pro</button>\n```\n"]),
+      {
+        dynamicActions: true,
+        onAction: ({ name, declared, message: text }) =>
+          fired.push({ name, declared, message: text }),
+      },
+    );
+    await message.done;
+    expect(message.getIssues()).toEqual([]);
+
+    const { getByRole } = render(<>{message.getSnapshot()}</>);
+    act(() => {
+      getByRole("button").click();
+    });
+
+    expect(fired).toEqual([
+      {
+        name: "choosePlanPro",
+        declared: false,
+        message: "The `actions.choosePlanPro` action was fired by the user.",
+      },
+    ]);
+  });
+
+  it("mixes declared handlers with dynamic actions", async () => {
+    const submitted = vi.fn();
+    const fired: [string, boolean][] = [];
+    const message = createGenUiMessage(
+      iterableFrom([
+        "```ui+jsx\n<div><button onClick={actions.submit}>Send</button>",
+        "<button onClick={actions.dismissHelp}>Dismiss</button></div>\n```\n",
+      ]),
+      {
+        actions: { submit: submitted },
+        dynamicActions: true,
+        onAction: (event) => fired.push([event.name, event.declared]),
+      },
+    );
+    await message.done;
+    expect(message.getIssues()).toEqual([]);
+
+    const { getAllByRole } = render(<>{message.getSnapshot()}</>);
+    act(() => {
+      for (const button of getAllByRole("button")) button.click();
+    });
+
+    expect(submitted).toHaveBeenCalledOnce();
+    expect(fired).toEqual([
+      ["submit", true],
+      ["dismissHelp", false],
+    ]);
   });
 });
 

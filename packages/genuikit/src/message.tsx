@@ -44,6 +44,14 @@ export interface GenUiMessageOptions extends Omit<
    */
   actions?: ActionsDefinition;
   /**
+   * Let the model **define its own actions** by referencing them: with this
+   * on, any `actions.<name>` resolves — an undeclared name becomes a
+   * notify-only action (`declared: false` on its {@link ActionEvent}) that
+   * emits the canonical message and runs no host code. Off (the default), a
+   * reference outside `actions` is reported as an `unknown-variable` issue.
+   */
+  dynamicActions?: boolean;
+  /**
    * Called when the user triggers an action. `event.message` is the canonical
    * text to send to the model as the next request.
    */
@@ -127,6 +135,7 @@ export function createGenUiMessage(
 ): GenUiMessage {
   const {
     actions,
+    dynamicActions,
     onAction,
     onIssue,
     onStreamError,
@@ -139,7 +148,10 @@ export function createGenUiMessage(
   const md = renderMarkdown ?? renderMarkdownDefault;
 
   // Wire the `actions` convention into the predefined variables.
-  const actionsVariable = actions ? createActionsVariable(actions, onAction) : undefined;
+  const actionsVariable =
+    actions || dynamicActions
+      ? createActionsVariable(actions ?? {}, onAction, dynamicActions === true)
+      : undefined;
   const variables = actionsVariable
     ? { ...baseVariables, actions: actionsVariable.values }
     : baseVariables;

@@ -30,7 +30,8 @@ frontier), and owns the three conventions that close the loop with the model:
   actions; the model wires them wherever a function is expected
   (`onClick={actions.submit}`); when the user triggers one, genuikit hands the
   app the canonical next request: ``The `actions.submit` action was fired by
-  the user.``
+  the user.`` With `dynamicActions: true`, the model may also **define its own
+  actions** just by referencing them — no declaration syntax needed.
 - **Issues** — parse errors, render-time crashes (each block sits in its own
   error boundary, so an invalid UI is hidden the moment it turns out to be),
   and unclosed fences are collected per message; `getIssueReport()` formats
@@ -131,7 +132,8 @@ message.getIssueReport(); // => string | null — feedback for the model
 | Option           | Type                                  | Description |
 | ---------------- | ------------------------------------- | ----------- |
 | `actions`        | `Record<string, ActionHandler \| true>` | The actions the model may use; exposed as the predefined variable `actions`, each entry typed `"function"`. `true` declares an action with no local handler. |
-| `onAction`       | `(event: ActionEvent) => void`        | Fired when the user triggers an action. `event.message` is the canonical next-request text. |
+| `dynamicActions` | `boolean`                             | Let the model define its own actions by referencing them: any `actions.<name>` resolves; undeclared names are notify-only (`declared: false`). Default `false`. |
+| `onAction`       | `(event: ActionEvent) => void`        | Fired when the user triggers an action. `event.message` is the canonical next-request text; `event.declared` distinguishes host-declared from model-defined actions. |
 | `onIssue`        | `(issue: GenUiIssue) => void`         | Fired for every issue as it is found (issues also accumulate on the message). |
 | `renderMarkdown` | `(markdown: string) => ReactNode`     | Replace the built-in Markdown renderer. |
 | `renderUiError`  | `(blockIndex: number) => ReactNode`   | Rendered in place of a block whose UI crashed (default: nothing — the block is hidden). |
@@ -173,6 +175,43 @@ declared is reported as an `unknown-variable` issue the moment it is parsed,
 and `onClick={actions}` (not a function) fails the type check. The helpers
 (`formatActionMessage`, `createActionsVariable`) are exported for custom
 setups.
+
+#### Model-defined actions: `dynamicActions`
+
+An AI-defined action carries no host behavior — all it can ever do is send
+the canonical "this action was fired" message back into the conversation. So
+a declaration adds nothing the reference itself doesn't already say: **the
+name is the definition.** With `dynamicActions: true`, any `actions.<name>`
+the model writes resolves to a notify-only action:
+
+````markdown
+Which plan would you like?
+
+```ui+jsx
+<div>
+  <button onClick={actions.choosePlanBasic}>Basic</button>
+  <button onClick={actions.choosePlanPro}>Pro</button>
+</div>
+```
+````
+
+Clicking "Pro" fires `onAction` with `declared: false` and the message
+``The `actions.choosePlanPro` action was fired by the user.`` — the model
+invented the name, so it knows what it means. Declared actions keep working
+exactly as before (`declared: true`, local handler runs); an undeclared name
+never runs host code, so apps switching on `event.name` should treat unknown
+names as pass-through-to-the-model.
+
+Pass the same flag to `formatGenUiPrompt({ dynamicActions: true, … })` so
+the prompt tells the model it may invent action names. Leave the flag off
+when the host owns the action vocabulary — then a typo in a declared name is
+still caught as an `unknown-variable` issue.
+
+(Implementation note: the `actions` value becomes a `Proxy` answering for
+any name, which the parser's `in`-semantics variable resolution accepts and
+type-infers as `"function"` — chunk invariance and the rest of the schema
+are untouched. Inherited `Object.prototype` member names like `toString`
+are left alone.)
 
 ### Issues: the feedback loop
 

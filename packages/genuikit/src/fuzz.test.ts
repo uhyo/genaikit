@@ -49,6 +49,7 @@ const JSX_SNIPPETS = [
   '<div title="x">hello</div>',
   "<Card label={user.name}>inner text</Card>",
   "<button onClick={actions.submit}>Go</button>",
+  "<button onClick={actions.launchRocket}>Fire</button>", // model-defined (dynamic) action
   "<Unknown />", // unknown-component issue
   "<div>{compute()}</div>", // unsupported-expression issue
   "<div><span>mismatch</b></div>", // mismatched-tag issue
@@ -98,6 +99,7 @@ const OPTIONS: GenUiMessageOptions = {
   },
   variables: { user: { name: "uhyo" }, count: 42 },
   actions: { submit: true },
+  dynamicActions: true,
 };
 
 /** A chunking-independent fingerprint of an issue. */
