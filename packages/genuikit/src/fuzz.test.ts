@@ -98,8 +98,7 @@ const OPTIONS: GenUiMessageOptions = {
       createElement("section", { "data-label": label }, children),
   },
   variables: { user: { name: "uhyo" }, count: 42 },
-  actions: { submit: true },
-  dynamicActions: true,
+  actions: { submit: true }, // dynamicActions defaults to true, covering actions.launchRocket
 };
 
 /** A chunking-independent fingerprint of an issue. */

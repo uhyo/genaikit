@@ -75,6 +75,33 @@ code {
   padding: 16px;
 }
 
+.mode {
+  display: inline-flex;
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.mode__tab {
+  background: var(--panel-2);
+  color: var(--muted);
+  border: none;
+  padding: 8px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mode__tab + .mode__tab {
+  border-left: 1px solid var(--border);
+}
+
+.mode__tab--active {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #0b1020;
+}
+
 .panel__toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -239,6 +266,71 @@ code {
   min-height: 240px;
 }
 
+/* Markdown rendered by genuikit inside the surface. */
+.render-surface h1,
+.render-surface h2,
+.render-surface h3 {
+  margin: 0 0 10px;
+  letter-spacing: -0.01em;
+}
+
+.render-surface h1 {
+  font-size: 1.35rem;
+}
+
+.render-surface h2 {
+  font-size: 1.15rem;
+}
+
+.render-surface p {
+  margin: 0 0 12px;
+  color: var(--text);
+}
+
+.render-surface ul,
+.render-surface ol {
+  margin: 0 0 12px;
+  padding-left: 22px;
+  color: var(--muted);
+}
+
+.render-surface blockquote {
+  margin: 0 0 12px;
+  padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: rgba(110, 168, 254, 0.07);
+  border-radius: 0 8px 8px 0;
+  color: var(--muted);
+}
+
+.render-surface blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+.render-surface pre {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  background: #0e1426;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: auto;
+}
+
+.render-surface pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.82rem;
+}
+
+.render-surface a {
+  color: var(--accent);
+}
+
+.render-surface .ui-card {
+  margin-bottom: 12px;
+}
+
 .progress {
   margin-top: 14px;
   height: 6px;
@@ -266,6 +358,44 @@ code {
   margin: 6px 0 0;
   padding-left: 18px;
   color: var(--muted);
+}
+
+/* genuikit action log: the next-request messages produced by actions.* */
+.action-log {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(54, 201, 143, 0.4);
+  background: rgba(54, 201, 143, 0.08);
+  border-radius: 12px;
+  font-size: 0.82rem;
+}
+
+.action-log ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+/* genuikit feedback report (getIssueReport) */
+.report {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(240, 180, 41, 0.4);
+  background: rgba(240, 180, 41, 0.07);
+  border-radius: 12px;
+  font-size: 0.82rem;
+}
+
+.report pre {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  background: #0e1426;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.78rem;
+  color: #c9d3ef;
 }
 
 /* ---- shimmer (Pending) ---- */

@@ -1,19 +1,24 @@
 /**
- * Sample JSX strings to stream. Each stays within the parser's supported subset:
- * elements, string/boolean/expression attributes, text, nested elements, and
- * `{ }` expressions limited to literals or a nested JSX element.
+ * Sample sources to stream, for both demo modes.
+ *
+ * - `jsxSamples` are raw JSX strings within the parser's supported subset —
+ *   fed straight to `useIncrementalJsx`.
+ * - `markdownSamples` are genuikit messages: Markdown where ```ui+jsx code
+ *   fences render as live UI, `actions.*` references wire interactivity
+ *   (model-defined names allowed by default), and problems come back as a
+ *   feedback report for the model.
  */
 export interface Sample {
   id: string;
   label: string;
-  jsx: string;
+  source: string;
 }
 
-export const samples: Sample[] = [
+export const jsxSamples: Sample[] = [
   {
     id: "product",
     label: "Product card",
-    jsx: `<Card>
+    source: `<Card>
   <CardHeader>
     <Title>Aurora Headphones</Title>
     <Badge tone="success">In stock</Badge>
@@ -35,7 +40,7 @@ export const samples: Sample[] = [
   {
     id: "profile",
     label: "Profile + fragment",
-    jsx: `<Card>
+    source: `<Card>
   <Row>
     <Avatar initials="UH" name="uhyo" />
     <CardBody>
@@ -54,7 +59,7 @@ export const samples: Sample[] = [
   {
     id: "dashboard",
     label: "Dashboard",
-    jsx: `<Card>
+    source: `<Card>
   <Title>This week</Title>
   <Row>
     <Stat label="Visitors" value={9320} />
@@ -74,11 +79,111 @@ export const samples: Sample[] = [
   {
     id: "malformed",
     label: "Malformed (lenient)",
-    jsx: `<Card>
+    source: `<Card>
   <Title>Resilient by design</Title>
   <Text>
     This snippet is missing close tags and uses an unsupported expression
     {someVariable + 1} — the parser recovers instead of throwing.
   <Badge tone="warning">auto-closed`,
+  },
+];
+
+export const markdownSamples: Sample[] = [
+  {
+    id: "assistant-reply",
+    label: "Assistant reply (Markdown + UI)",
+    source: `# Found it!
+
+The **Aurora** line is on sale today — here's the best match for what you
+described:
+
+\`\`\`ui+jsx
+<Card>
+  <CardHeader>
+    <Title>Aurora Headphones</Title>
+    <Badge tone="success">In stock</Badge>
+  </CardHeader>
+  <CardBody>
+    <Text>Adaptive noise cancellation, 30-hour battery, wireless charging.</Text>
+    <Row>
+      <Stat label="Price" value={"$249"} />
+      <Stat label="Rating" value={4.8} />
+    </Row>
+    <Button variant="primary" onClick={actions.addToCart}>Add to cart</Button>
+  </CardBody>
+</Card>
+\`\`\`
+
+Click *Add to cart* and I'll take it from there — or ask me for
+alternatives. A few things reviewers loved:
+
+- The battery genuinely lasts the week
+- Multipoint pairing that just works
+`,
+  },
+  {
+    id: "plan-picker",
+    label: "Plan picker (model-defined actions)",
+    source: `## Pick a plan
+
+Both plans include unlimited projects. The action names below are
+**invented by the model** — genuikit's dynamic actions resolve them without
+any host-side declaration:
+
+\`\`\`ui+jsx
+<Row>
+  <Card>
+    <Title>Basic</Title>
+    <Stat label="Monthly" value={"$9"} />
+    <Button variant="ghost" onClick={actions.choosePlanBasic}>Choose Basic</Button>
+  </Card>
+  <Card>
+    <Title>Pro</Title>
+    <Stat label="Monthly" value={"$29"} />
+    <Badge tone="info">Popular</Badge>
+    <Button variant="primary" onClick={actions.choosePlanPro}>Choose Pro</Button>
+  </Card>
+</Row>
+\`\`\`
+
+> Firing an action sends the canonical message back to the model — watch the
+> "Next request to the AI" log below.
+`,
+  },
+  {
+    id: "code-vs-ui",
+    label: "Code fence vs UI fence",
+    source: `Only a fence whose info string is exactly \`ui+jsx\` renders as UI.
+A regular code fence stays code:
+
+\`\`\`ts
+const parser = createGenUiMessage(stream, { components });
+\`\`\`
+
+…while this one becomes a live component tree:
+
+\`\`\`ui+jsx
+<Callout tone="info">
+  Rendered by <Badge tone="success">genuikit</Badge> via jsx-incremental-parser.
+</Callout>
+\`\`\`
+`,
+  },
+  {
+    id: "feedback-loop",
+    label: "Malformed (feedback loop)",
+    source: `Let me show that chart:
+
+\`\`\`ui+jsx
+<Chart data={metrics.weekly} />
+<Card>
+  <Title>Still renders!</Title>
+  <Text>The unknown component above degrades gracefully.</Text>
+\`\`\`
+
+The block above references an unknown component and never closes its last
+tag — the UI stays up, and the issues become the feedback report shown
+below, ready to send back to the model.
+`,
   },
 ];

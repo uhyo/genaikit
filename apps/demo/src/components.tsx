@@ -35,9 +35,16 @@ function Badge({ tone = "neutral", children }: WithChildren & { tone?: string })
   return <span className={`ui-badge ui-badge--${tone}`}>{children}</span>;
 }
 
-function Button({ variant = "primary", children }: WithChildren & { variant?: string }) {
+function Button({
+  variant = "primary",
+  onClick,
+  children,
+}: WithChildren & { variant?: string; onClick?: () => void }) {
+  // `onClick` is forwarded so streamed UI can wire `actions.*` references
+  // (the parser only ever passes functions resolved from predefined
+  // variables here — string handlers are rejected by the schema).
   return (
-    <button className={`ui-button ui-button--${variant}`} type="button">
+    <button className={`ui-button ui-button--${variant}`} type="button" onClick={onClick}>
       {children}
     </button>
   );

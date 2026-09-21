@@ -8,8 +8,9 @@ describe("formatGenUiPrompt", () => {
     expect(prompt).toContain("## Message format");
     expect(prompt).toContain("```ui+jsx");
     expect(prompt).toContain("close every ui+jsx fence");
-    // No actions configured -> no Actions section.
-    expect(prompt).not.toContain("## Actions");
+    // Dynamic actions are the default, so the Actions section is always there
+    // unless opted out.
+    expect(prompt).toContain("## Actions");
   });
 
   it("embeds the parser's prompt contract", () => {
@@ -44,8 +45,8 @@ describe("formatGenUiPrompt", () => {
 });
 
 describe("formatGenUiPrompt — dynamic actions", () => {
-  it("tells the model it may define its own actions", () => {
-    const prompt = formatGenUiPrompt({ dynamicActions: true });
+  it("tells the model it may define its own actions (the default)", () => {
+    const prompt = formatGenUiPrompt();
     expect(prompt).toContain("## Actions");
     expect(prompt).toContain("define your own actions");
     expect(prompt).toContain("`actions.<name>`");
@@ -55,14 +56,21 @@ describe("formatGenUiPrompt — dynamic actions", () => {
   });
 
   it("lists declared actions alongside the dynamic note, using one as the example", () => {
-    const prompt = formatGenUiPrompt({ actions: { submit: true }, dynamicActions: true });
+    const prompt = formatGenUiPrompt({ actions: { submit: true } });
     expect(prompt).toContain("- Available actions: `actions.submit`.");
     expect(prompt).toContain("define your own actions");
     expect(prompt).toContain("onClick={actions.submit}");
   });
 
-  it("does not mention self-defined actions by default", () => {
-    const prompt = formatGenUiPrompt({ actions: { submit: true } });
+  it("omits self-defined actions when opted out", () => {
+    const prompt = formatGenUiPrompt({ actions: { submit: true }, dynamicActions: false });
+    expect(prompt).toContain("- Available actions: `actions.submit`.");
     expect(prompt).not.toContain("define your own actions");
+  });
+
+  it("omits the Actions section entirely when opted out with no declared actions", () => {
+    const prompt = formatGenUiPrompt({ dynamicActions: false });
+    expect(prompt).not.toContain("## Actions");
+    expect(prompt).not.toContain("- {actions} —");
   });
 });

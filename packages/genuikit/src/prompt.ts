@@ -19,8 +19,9 @@ export interface GenUiPromptOptions extends PromptContractOptions {
    */
   actions?: ActionsDefinition;
   /**
-   * Same value as `GenUiMessageOptions.dynamicActions`: tell the model it may
-   * define its own actions by referencing `actions.<name>` with any name.
+   * Same value as `GenUiMessageOptions.dynamicActions` (default `true`): tell
+   * the model it may define its own actions by referencing `actions.<name>`
+   * with any name. Pass `false` when the runtime opts out too.
    */
   dynamicActions?: boolean;
 }
@@ -32,7 +33,7 @@ export interface GenUiPromptOptions extends PromptContractOptions {
  */
 export function formatGenUiPrompt(options: GenUiPromptOptions = {}): string {
   const { actions, dynamicActions, variables, variableTypes, ...contract } = options;
-  const dynamic = dynamicActions === true;
+  const dynamic = dynamicActions !== false;
 
   const lines: string[] = [
     "Your messages are rendered as Markdown with embedded interactive UI.",

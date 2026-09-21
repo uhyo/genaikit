@@ -136,23 +136,22 @@ describe("createGenUiMessage — actions", () => {
     expect(fired).toEqual(["The `actions.submit` action was fired by the user."]);
   });
 
-  it("reports a reference to an undeclared action as an issue", async () => {
+  it("reports an undeclared action as an issue when dynamicActions is opted out", async () => {
     const issues: GenUiIssue[] = [];
     const message = createGenUiMessage(
       iterableFrom(["```ui+jsx\n<button onClick={actions.launch}>Go</button>\n```\n"]),
-      { actions: { submit: true }, onIssue: (issue) => issues.push(issue) },
+      { actions: { submit: true }, dynamicActions: false, onIssue: (issue) => issues.push(issue) },
     );
     await message.done;
     expect(issues.map((i) => i.kind)).toEqual(["jsx-error"]);
     expect(message.getIssueReport()).toContain("actions.launch");
   });
 
-  it("accepts model-defined actions when dynamicActions is on", async () => {
+  it("accepts model-defined actions by default", async () => {
     const fired: { name: string; declared: boolean; message: string }[] = [];
     const message = createGenUiMessage(
       iterableFrom(["```ui+jsx\n<button onClick={actions.choosePlanPro}>Pro</button>\n```\n"]),
       {
-        dynamicActions: true,
         onAction: ({ name, declared, message: text }) =>
           fired.push({ name, declared, message: text }),
       },
@@ -184,7 +183,6 @@ describe("createGenUiMessage — actions", () => {
       ]),
       {
         actions: { submit: submitted },
-        dynamicActions: true,
         onAction: (event) => fired.push([event.name, event.declared]),
       },
     );

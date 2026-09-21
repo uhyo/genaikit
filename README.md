@@ -15,7 +15,7 @@ arrive — safely, incrementally, and without flicker.
 
 | App | Description |
 | --- | ----------- |
-| [`apps/demo`](./apps/demo) | Interactive playground: streams sample JSX character-by-character and renders the live React tree side-by-side with the raw text. |
+| [`apps/demo`](./apps/demo) | Interactive playground with two modes: stream a genuikit Markdown message (```` ```ui+jsx ```` fences render as live, interactive UI with an action log and feedback report) or raw JSX, side-by-side with the received text. |
 
 ## Development
 

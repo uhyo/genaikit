@@ -9,7 +9,8 @@
  * user-turn text for the model ("The `actions.submit` action was fired by the
  * user."). The host app forwards that message as the next request.
  *
- * With **dynamic actions** enabled, the model may also *define its own*
+ * With **dynamic actions** (genuikit's default; opt out with
+ * `dynamicActions: false`), the model may also *define its own*
  * actions simply by referencing them — `onClick={actions.choosePlanPro}` needs
  * no declaration; the name is the definition. This is safe because an
  * undeclared action carries no host behavior: all it can do is emit the

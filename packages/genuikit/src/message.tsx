@@ -44,11 +44,13 @@ export interface GenUiMessageOptions extends Omit<
    */
   actions?: ActionsDefinition;
   /**
-   * Let the model **define its own actions** by referencing them: with this
-   * on, any `actions.<name>` resolves — an undeclared name becomes a
+   * Let the model **define its own actions** by referencing them (the
+   * default): any `actions.<name>` resolves — an undeclared name becomes a
    * notify-only action (`declared: false` on its {@link ActionEvent}) that
-   * emits the canonical message and runs no host code. Off (the default), a
-   * reference outside `actions` is reported as an `unknown-variable` issue.
+   * emits the canonical message and runs no host code. Pass `false` to opt
+   * out and keep the action vocabulary host-owned: a reference outside
+   * `actions` is then reported as an `unknown-variable` issue (and with no
+   * `actions` declared, the variable does not exist at all).
    */
   dynamicActions?: boolean;
   /**
@@ -147,11 +149,12 @@ export function createGenUiMessage(
   } = options;
   const md = renderMarkdown ?? renderMarkdownDefault;
 
-  // Wire the `actions` convention into the predefined variables.
+  // Wire the `actions` convention into the predefined variables. Dynamic
+  // (model-defined) actions are the default, so the `actions` variable always
+  // exists unless the host opts out without declaring any.
+  const dynamic = dynamicActions !== false;
   const actionsVariable =
-    actions || dynamicActions
-      ? createActionsVariable(actions ?? {}, onAction, dynamicActions === true)
-      : undefined;
+    actions || dynamic ? createActionsVariable(actions ?? {}, onAction, dynamic) : undefined;
   const variables = actionsVariable
     ? { ...baseVariables, actions: actionsVariable.values }
     : baseVariables;

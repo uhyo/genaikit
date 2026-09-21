@@ -20,6 +20,9 @@ importers:
 
   apps/demo:
     dependencies:
+      genuikit:
+        specifier: workspace:*
+        version: link:../../packages/genuikit
       jsx-incremental-parser:
         specifier: workspace:*
         version: link:../../packages/jsx-incremental-parser

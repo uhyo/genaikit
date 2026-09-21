@@ -17,8 +17,10 @@ A **pnpm monorepo** hosting a Generative UI toolchain. Workspace layout:
     convention (UI → next AI request) and structured issue feedback for the
     model.
 - `apps/*` — private, unpublished apps. Currently:
-  - [`apps/demo`](./apps/demo) — Vite playground that streams sample JSX and
-    renders the live tree (deployable to Cloudflare Workers).
+  - [`apps/demo`](./apps/demo) — Vite playground with two modes: streams a
+    genuikit Markdown message (live UI blocks, action log, feedback report)
+    or raw JSX into the live tree (deployable to Cloudflare Workers). Both
+    workspace libraries resolve to source via aliases — no build step.
 
 Per-package docs: the parser's original goal is
 [`packages/jsx-incremental-parser/GOAL.md`](./packages/jsx-incremental-parser/GOAL.md),
@@ -100,7 +102,7 @@ are relative to `packages/genuikit/`:
 | `src/splitter.ts` | Resumable Markdown / ```` ```ui+jsx ```` fence splitter. Chunking-invariant commits (per complete line); a partial trailing line is a tentative "tail" (withheld while it could still be a fence); tracks regular code fences so a `ui+jsx` opener inside one is not misread. |
 | `src/channel.ts` | Single-consumer push channel; each `ui+jsx` block's extracted JSX is pushed through one into its own `createIncrementalJsxParser`. |
 | `src/markdown.tsx` | Built-in safe CommonMark-subset renderer (raw HTML stays literal text, URL schemes checked). Pure/total — re-run on a growing region while streaming. Pluggable via `renderMarkdown`. |
-| `src/actions.ts` | The `actions` convention: declared actions → the predefined `actions` variable (typed `"function"`), firing `ActionEvent`s with the canonical next-request `message`. With `dynamicActions`, a Proxy resolves *any* `actions.<name>` to a notify-only action (`declared: false`) — the model defines actions by referencing them; no host code ever runs for undeclared names. |
+| `src/actions.ts` | The `actions` convention: declared actions → the predefined `actions` variable (typed `"function"`), firing `ActionEvent`s with the canonical next-request `message`. Dynamic actions (the default; `dynamicActions: false` opts out): a Proxy resolves *any* `actions.<name>` to a notify-only action (`declared: false`) — the model defines actions by referencing them; no host code ever runs for undeclared names. |
 | `src/issues.ts` | `GenUiIssue` union (`jsx-error` / `render-error` / `unclosed-fence`, all per `blockIndex`) + `formatIssueReport` (feedback text for the model). |
 | `src/boundary.tsx` | Per-block error boundary; `resetKey` bumps on each parser update so a crashed block retries as the stream grows. |
 | `src/message.tsx` | `createGenUiMessage`: pumps the source, drives the splitter, owns segments (cached markdown regions + per-block parsers in boundaries), collects issues, exposes a `useSyncExternalStore`-shaped store. |
