@@ -1,0 +1,20 @@
+import { defineConfig } from "tsdown";
+
+export default defineConfig({
+  entry: {
+    index: "src/index.ts",
+    react: "src/react.ts",
+  },
+  format: ["esm"],
+  // Emit plain `.js` / `.d.ts` (the package is `"type": "module"`).
+  fixedExtension: false,
+  dts: true,
+  clean: true,
+  sourcemap: true,
+  treeshake: true,
+  // React is a peer and jsx-incremental-parser a regular dependency; neither
+  // is bundled.
+  deps: {
+    neverBundle: ["react", "react-dom", "react/jsx-runtime", "jsx-incremental-parser"],
+  },
+});

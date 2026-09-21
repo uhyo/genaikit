@@ -9,6 +9,7 @@ arrive — safely, incrementally, and without flicker.
 | Package | Description |
 | ------- | ----------- |
 | [`jsx-incremental-parser`](./packages/jsx-incremental-parser) | Incrementally parse a streamed JSX string into a live React snapshot, rendering not-yet-arrived parts as `<Pending />`. Framework-agnostic core + React adapter. |
+| [`genuikit`](./packages/genuikit) | Lightweight Generative UI framework on top of the parser: stream AI-generated Markdown where ```` ```ui+jsx ```` code fences render as live UI, with an `actions` convention for interactivity and structured error feedback for the model. |
 
 ## Apps
 

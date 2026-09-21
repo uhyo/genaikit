@@ -11,6 +11,11 @@ A **pnpm monorepo** hosting a Generative UI toolchain. Workspace layout:
     incrementally parses a **streamed JSX string** into a **live React tree**,
     rendering the not-yet-arrived part as a single `<Pending />` placeholder at
     the streaming frontier.
+  - [`packages/genuikit`](./packages/genuikit) — lightweight **Generative UI
+    framework** wrapping the parser: streams AI-generated **Markdown** where
+    ```` ```ui+jsx ```` code fences render as live UI, with the `actions`
+    convention (UI → next AI request) and structured issue feedback for the
+    model.
 - `apps/*` — private, unpublished apps. Currently:
   - [`apps/demo`](./apps/demo) — Vite playground that streams sample JSX and
     renders the live tree (deployable to Cloudflare Workers).
@@ -78,10 +83,34 @@ relative to `packages/jsx-incremental-parser/`:
 
 ### Subpath exports
 
-`.` (React adapter), `./react` (hook), `./core` (framework-agnostic). The
-`./core` entry must stay React-free — don't import `react`/`render.ts` from
-`core.ts`, `tokenizer.ts`, `tree-builder.ts`, `expression.ts`, `entities.ts`, or
-`stream.ts`.
+`.` (React adapter), `./react` (hook), `./core` (framework-agnostic, incl.
+`pumpStream`). The `./core` entry must stay React-free — don't import
+`react`/`render.ts` from `core.ts`, `tokenizer.ts`, `tree-builder.ts`,
+`expression.ts`, `entities.ts`, or `stream.ts`.
+
+## Architecture: `packages/genuikit`
+
+Wraps the parser's **public API only** (root entry + `./core`); typecheck and
+Vitest resolve it to the parser's source via tsconfig `paths` / a Vite alias
+(same pattern as `apps/demo`), so no build step is needed first. Paths below
+are relative to `packages/genuikit/`:
+
+| File | Role |
+| ---- | ---- |
+| `src/splitter.ts` | Resumable Markdown / ```` ```ui+jsx ```` fence splitter. Chunking-invariant commits (per complete line); a partial trailing line is a tentative "tail" (withheld while it could still be a fence); tracks regular code fences so a `ui+jsx` opener inside one is not misread. |
+| `src/channel.ts` | Single-consumer push channel; each `ui+jsx` block's extracted JSX is pushed through one into its own `createIncrementalJsxParser`. |
+| `src/markdown.tsx` | Built-in safe CommonMark-subset renderer (raw HTML stays literal text, URL schemes checked). Pure/total — re-run on a growing region while streaming. Pluggable via `renderMarkdown`. |
+| `src/actions.ts` | The `actions` convention: declared actions → the predefined `actions` variable (typed `"function"`), firing `ActionEvent`s with the canonical next-request `message`. |
+| `src/issues.ts` | `GenUiIssue` union (`jsx-error` / `render-error` / `unclosed-fence`, all per `blockIndex`) + `formatIssueReport` (feedback text for the model). |
+| `src/boundary.tsx` | Per-block error boundary; `resetKey` bumps on each parser update so a crashed block retries as the stream grows. |
+| `src/message.tsx` | `createGenUiMessage`: pumps the source, drives the splitter, owns segments (cached markdown regions + per-block parsers in boundaries), collects issues, exposes a `useSyncExternalStore`-shaped store. |
+| `src/prompt.ts` | `formatGenUiPrompt`: message format + actions + the parser's `formatPromptContract`. |
+| `src/index.ts` / `src/react.ts` | Entries: `.` (store + helpers) and `./react` (`useGenUiMessage`, `useGenUiNode`). |
+
+Invariants: chunk independence end-to-end (its own fuzz suite); markdown
+regions keep stable element identities once settled; a crashed UI block never
+takes down the message (boundary + retry); issues are the only error channel
+(`onJsxError` is not exposed).
 
 ## Development
 

@@ -314,6 +314,14 @@ resolving them to the consumer; the exported
 (the React adapter uses it for both parse-time validation and render-time
 resolution, so the two always agree).
 
+The stream driver behind the React adapter is exported here too:
+`pumpStream(source, sink)` normalizes any accepted `JsxStreamSource`
+(`ReadableStream` of bytes or strings, or an `AsyncIterable`) into string
+chunks — decoding bytes with a streaming `TextDecoder` — and pushes them into
+a `{ write, end }` sink, returning a `{ done, cancel }` handle. Use it to
+build your own adapter, or to pre-process a stream before it reaches the
+parser.
+
 ## Error handling
 
 AI output is frequently malformed, so the parser is **lenient by default**:

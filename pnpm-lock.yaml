@@ -49,6 +49,52 @@ importers:
         specifier: 4.103.0
         version: 4.103.0
 
+  packages/genuikit:
+    dependencies:
+      jsx-incremental-parser:
+        specifier: workspace:*
+        version: link:../jsx-incremental-parser
+    devDependencies:
+      '@arethetypeswrong/cli':
+        specifier: 0.18.3
+        version: 0.18.3
+      '@testing-library/react':
+        specifier: 16.3.2
+        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@types/node':
+        specifier: 26.0.0
+        version: 26.0.0
+      '@types/react':
+        specifier: 19.2.17
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: 19.2.3
+        version: 19.2.3(@types/react@19.2.17)
+      '@vitest/coverage-v8':
+        specifier: 4.1.9
+        version: 4.1.9(vitest@4.1.9)
+      happy-dom:
+        specifier: 20.10.6
+        version: 20.10.6
+      publint:
+        specifier: 0.3.21
+        version: 0.3.21
+      react:
+        specifier: 19.2.7
+        version: 19.2.7
+      react-dom:
+        specifier: 19.2.7
+        version: 19.2.7(react@19.2.7)
+      tsdown:
+        specifier: 0.22.3
+        version: 0.22.3(@arethetypeswrong/core@0.18.3)(publint@0.3.21)(typescript@6.0.3)
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: 4.1.9
+        version: 4.1.9(@types/node@26.0.0)(@vitest/coverage-v8@4.1.9)(happy-dom@20.10.6)(vite@8.0.16(@types/node@26.0.0)(esbuild@0.28.1))
+
   packages/jsx-incremental-parser:
     devDependencies:
       '@arethetypeswrong/cli':
