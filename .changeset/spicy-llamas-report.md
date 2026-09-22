@@ -1,5 +1,5 @@
 ---
-"jsx-incremental-parser": patch
+"@ingenui/incremental-jsx-parser": patch
 ---
 
 Restructure error handling into two channels split by recoverability.

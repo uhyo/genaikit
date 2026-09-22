@@ -7,27 +7,27 @@ Guidance for working in this repository.
 A **pnpm monorepo** hosting a Generative UI toolchain. Workspace layout:
 
 - `packages/*` — published libraries. Currently:
-  - [`packages/jsx-incremental-parser`](./packages/jsx-incremental-parser) —
+  - [`packages/incremental-jsx-parser`](./packages/incremental-jsx-parser) —
     incrementally parses a **streamed JSX string** into a **live React tree**,
     rendering the not-yet-arrived part as a single `<Pending />` placeholder at
     the streaming frontier.
-  - [`packages/genuikit`](./packages/genuikit) — lightweight **Generative UI
+  - [`packages/ingenui`](./packages/ingenui) — lightweight **Generative UI
     framework** wrapping the parser: streams AI-generated **Markdown** where
     ```` ```ui+jsx ```` code fences render as live UI, with the `actions`
     convention (UI → next AI request) and structured issue feedback for the
     model.
 - `apps/*` — private, unpublished apps. Currently:
   - [`apps/demo`](./apps/demo) — Vite playground with two modes: streams a
-    genuikit Markdown message (live UI blocks, action log, feedback report)
+    ingenui Markdown message (live UI blocks, action log, feedback report)
     or raw JSX into the live tree (deployable to Cloudflare Workers). Both
     workspace libraries resolve to source via aliases — no build step.
 
 Per-package docs: the parser's original goal is
-[`packages/jsx-incremental-parser/GOAL.md`](./packages/jsx-incremental-parser/GOAL.md),
+[`packages/incremental-jsx-parser/GOAL.md`](./packages/incremental-jsx-parser/GOAL.md),
 the full design is
-[`packages/jsx-incremental-parser/PLAN.md`](./packages/jsx-incremental-parser/PLAN.md),
+[`packages/incremental-jsx-parser/PLAN.md`](./packages/incremental-jsx-parser/PLAN.md),
 and the public API is its
-[`README.md`](./packages/jsx-incremental-parser/README.md).
+[`README.md`](./packages/incremental-jsx-parser/README.md).
 
 ## Monorepo conventions
 
@@ -46,11 +46,11 @@ and the public API is its
   build, colocated Vitest tests, and a `LICENSE` copy. Add `publint`/`attw`
   scripts so root `pnpm run publint` / `pnpm run attw` cover them.
 
-## Architecture: `packages/jsx-incremental-parser`
+## Architecture: `packages/incremental-jsx-parser`
 
 The pipeline is a chain of small, independently testable modules
 (`source → tokenizer → tree builder → store → React adapter`). Paths below are
-relative to `packages/jsx-incremental-parser/`:
+relative to `packages/incremental-jsx-parser/`:
 
 | File | Role |
 | ---- | ---- |
@@ -90,12 +90,12 @@ relative to `packages/jsx-incremental-parser/`:
 `react`/`render.ts` from `core.ts`, `tokenizer.ts`, `tree-builder.ts`,
 `expression.ts`, `entities.ts`, or `stream.ts`.
 
-## Architecture: `packages/genuikit`
+## Architecture: `packages/ingenui`
 
 Wraps the parser's **public API only** (root entry + `./core`); typecheck and
 Vitest resolve it to the parser's source via tsconfig `paths` / a Vite alias
 (same pattern as `apps/demo`), so no build step is needed first. Paths below
-are relative to `packages/genuikit/`:
+are relative to `packages/ingenui/`:
 
 | File | Role |
 | ---- | ---- |
@@ -125,7 +125,7 @@ pnpm run build   # build all packages
 
 Tooling: TypeScript (strict), Vitest + happy-dom, oxlint + oxfmt, tsdown,
 publint + attw. Each `src/*.ts(x)` has a colocated `*.test.ts(x)`; the fuzz suite
-(`packages/jsx-incremental-parser/src/fuzz.test.ts`) checks chunk-independence
+(`packages/incremental-jsx-parser/src/fuzz.test.ts`) checks chunk-independence
 over generated input.
 
 ## Release flow (Changesets)

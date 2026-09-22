@@ -1,5 +1,5 @@
 ---
-"genuikit": patch
+"ingenui": patch
 ---
 
 Model-defined actions, on by default: the model may define its own actions

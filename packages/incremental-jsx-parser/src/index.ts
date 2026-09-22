@@ -1,6 +1,6 @@
 /**
  * React adapter — the primary, documented entry point
- * (`jsx-incremental-parser`).
+ * (`@ingenui/incremental-jsx-parser`).
  *
  * Wraps the framework-agnostic {@link createParser | core} and converts the AST
  * snapshot into a `React.ReactNode`, injecting a `<Pending />` placeholder at

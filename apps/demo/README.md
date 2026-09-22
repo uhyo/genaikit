@@ -6,15 +6,15 @@ resulting **live React tree** side-by-side with the raw text. Everything that
 hasn't arrived yet is the single `<Pending />` frontier, shown here as a
 shimmer. Two modes:
 
-- **genuikit · Markdown + ui+jsx** (default) — streams a
-  [`genuikit`](../../packages/genuikit) message: Markdown where
+- **ingenui · Markdown + ui+jsx** (default) — streams a
+  [`ingenui`](../../packages/ingenui) message: Markdown where
   ```` ```ui+jsx ```` code fences render as live, interactive UI. Clicking a
   streamed `actions.*` handler logs the canonical **next request to the AI**
   (action names are model-defined — dynamic actions, the default), and a
   malformed sample shows the **feedback report** (`getIssueReport()`) ready
   to send back to the model.
 - **parser · raw JSX** — streams a bare JSX string straight into
-  [`jsx-incremental-parser`](../../packages/jsx-incremental-parser).
+  [`@ingenui/incremental-jsx-parser`](../../packages/incremental-jsx-parser).
 
 The layout is two side-by-side panes: the **received stream** (raw text, growing
 with a blinking caret) on the left, and the **live React tree** it parses into on
@@ -30,7 +30,7 @@ the right.
 - **Lenient parsing** — the malformed samples omit close tags, reference
   unknown components, and use unsupported `{ }` expressions; the tree recovers
   and the problems surface as structured events (`onJsxError` in parser mode,
-  issues + the feedback report in genuikit mode) instead of throwing.
+  issues + the feedback report in ingenui mode) instead of throwing.
 - **Components as an allowlist** — only the components in
   [`src/components.tsx`](./src/components.tsx) can be instantiated by the streamed
   source; anything else degrades to `<Pending />`.
@@ -46,7 +46,7 @@ the libraries show up live.
 
 ```sh
 pnpm install          # once, at the repo root
-pnpm --filter jsx-incremental-parser-demo dev
+pnpm --filter ingenui-demo dev
 ```
 
 Then open the printed URL. Pick a sample (or edit the JSX), choose a speed, and
@@ -71,19 +71,19 @@ Then build + publish:
 
 ```sh
 pnpm install          # once, at the repo root
-pnpm --filter jsx-incremental-parser-demo run deploy   # = vite build && wrangler deploy
+pnpm --filter ingenui-demo run deploy   # = vite build && wrangler deploy
 ```
 
-Wrangler prints the live URL (`https://jsx-incremental-parser-demo.<account>.workers.dev`).
+Wrangler prints the live URL (`https://ingenui-demo.<account>.workers.dev`).
 To preview the production build on the Workers runtime locally first, run
 `pnpm cf:preview` (`vite build && wrangler dev`).
 
 ## How it's wired
 
-genuikit mode:
+ingenui mode:
 
 ```tsx
-import { useGenUiMessage } from "genuikit/react";
+import { useGenUiMessage } from "ingenui/react";
 
 const { node, message } = useGenUiMessage(stream, {
   components: demoComponents,      // allowlist + renderers for ui+jsx blocks
@@ -97,7 +97,7 @@ const { node, message } = useGenUiMessage(stream, {
 Parser mode:
 
 ```tsx
-import { useIncrementalJsx } from "jsx-incremental-parser/react";
+import { useIncrementalJsx } from "@ingenui/incremental-jsx-parser/react";
 
 const node = useIncrementalJsx(stream, {
   components: demoComponents,      // allowlist + renderers

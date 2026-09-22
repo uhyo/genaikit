@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { JsxErrorEvent } from "jsx-incremental-parser";
+import type { JsxErrorEvent } from "@ingenui/incremental-jsx-parser";
 
 import type { GenUiIssue } from "./issues";
 import { formatIssueReport } from "./issues";

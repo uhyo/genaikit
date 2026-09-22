@@ -1,9 +1,9 @@
 ---
-"genuikit": patch
+"ingenui": patch
 ---
 
 Initial release: a lightweight Generative UI framework wrapping
-`jsx-incremental-parser`. Streams an AI-generated Markdown message into a
+`@ingenui/incremental-jsx-parser`. Streams an AI-generated Markdown message into a
 live React tree, rendering fenced ```ui+jsx code blocks as interactive UI.
 
 - `createGenUiMessage` store + `useGenUiMessage` / `useGenUiNode` React hooks.

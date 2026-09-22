@@ -1,5 +1,5 @@
 {
-  "name": "jsx-incremental-parser",
+  "name": "@ingenui/incremental-jsx-parser",
   "version": "0.0.0",
   "description": "Incrementally parse a streamed JSX string into a live React snapshot, rendering not-yet-arrived parts as <Pending />.",
   "keywords": [
@@ -15,8 +15,8 @@
   "author": "uhyo",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/uhyo/jsx-incremental-parser.git",
-    "directory": "packages/jsx-incremental-parser"
+    "url": "git+https://github.com/uhyo/genaikit.git",
+    "directory": "packages/incremental-jsx-parser"
   },
   "files": [
     "dist"

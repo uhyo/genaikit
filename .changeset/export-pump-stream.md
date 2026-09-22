@@ -1,5 +1,5 @@
 ---
-"jsx-incremental-parser": patch
+"@ingenui/incremental-jsx-parser": patch
 ---
 
 Export the `pumpStream` stream driver (and its `StreamSink` / `StreamHandle` /

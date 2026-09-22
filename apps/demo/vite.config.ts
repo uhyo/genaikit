@@ -2,9 +2,9 @@ import { fileURLToPath } from "node:url";
 
 import { defineConfig } from "vite";
 
-// Resolve `jsx-incremental-parser` (and its subpaths) straight to the library
+// Resolve `@ingenui/incremental-jsx-parser` (and its subpaths) straight to the library
 // source, so the demo always reflects the code in
-// `../../packages/jsx-incremental-parser/src` with no build step.
+// `../../packages/incremental-jsx-parser/src` with no build step.
 // We don't depend on `@vitejs/plugin-react`; Vite's built-in esbuild transform
 // handles `.tsx` using the `jsx: "react-jsx"` setting from `tsconfig.json`.
 const fromHere = (p: string) => fileURLToPath(new URL(p, import.meta.url));
@@ -13,13 +13,17 @@ export default defineConfig({
   root: fromHere("."),
   resolve: {
     alias: {
-      "jsx-incremental-parser/react": fromHere(
-        "../../packages/jsx-incremental-parser/src/react.ts",
+      "@ingenui/incremental-jsx-parser/react": fromHere(
+        "../../packages/incremental-jsx-parser/src/react.ts",
       ),
-      "jsx-incremental-parser/core": fromHere("../../packages/jsx-incremental-parser/src/core.ts"),
-      "jsx-incremental-parser": fromHere("../../packages/jsx-incremental-parser/src/index.ts"),
-      "genuikit/react": fromHere("../../packages/genuikit/src/react.ts"),
-      genuikit: fromHere("../../packages/genuikit/src/index.ts"),
+      "@ingenui/incremental-jsx-parser/core": fromHere(
+        "../../packages/incremental-jsx-parser/src/core.ts",
+      ),
+      "@ingenui/incremental-jsx-parser": fromHere(
+        "../../packages/incremental-jsx-parser/src/index.ts",
+      ),
+      "ingenui/react": fromHere("../../packages/ingenui/src/react.ts"),
+      ingenui: fromHere("../../packages/ingenui/src/index.ts"),
     },
     // The aliased library source imports `react`/`react-dom` too.
     // Without deduping, the production build resolves those to a separate copy

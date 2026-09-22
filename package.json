@@ -7,7 +7,7 @@
   "author": "uhyo",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/uhyo/jsx-incremental-parser.git"
+    "url": "git+https://github.com/uhyo/genaikit.git"
   },
   "type": "module",
   "scripts": {

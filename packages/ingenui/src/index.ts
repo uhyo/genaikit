@@ -1,9 +1,9 @@
 /**
- * genuikit — a lightweight Generative UI framework (`genuikit`).
+ * ingenui — a lightweight Generative UI framework (`ingenui`).
  *
  * Streams an AI-generated **Markdown** message into a live React tree, where
  * fenced ```ui+jsx code blocks render as interactive UI through
- * `jsx-incremental-parser`. Owns three conventions on top of the parser:
+ * `@ingenui/incremental-jsx-parser`. Owns three conventions on top of the parser:
  *
  * - **`ui+jsx` fences** — the message format (`createGenUiMessage`,
  *   `formatGenUiPrompt`);
@@ -13,7 +13,7 @@
  *   error boundary), and unclosed fences, collected and formatted as feedback
  *   for the model (`getIssueReport`).
  *
- * The React hook lives in `genuikit/react`.
+ * The React hook lives in `ingenui/react`.
  */
 
 export { createGenUiMessage } from "./message";
@@ -39,9 +39,9 @@ export { renderMarkdown } from "./markdown";
 export { UiBlockErrorBoundary } from "./boundary";
 export type { UiBlockErrorBoundaryProps } from "./boundary";
 
-// Re-exported from jsx-incremental-parser for convenience: the types most
-// genuikit options are written in terms of.
-export { formatJsxError } from "jsx-incremental-parser";
+// Re-exported from @ingenui/incremental-jsx-parser for convenience: the types most
+// ingenui options are written in terms of.
+export { formatJsxError } from "@ingenui/incremental-jsx-parser";
 export type {
   ComponentEntry,
   ComponentSpec,
@@ -49,4 +49,4 @@ export type {
   JsxErrorEvent,
   JsxStreamSource,
   SchemaType,
-} from "jsx-incremental-parser";
+} from "@ingenui/incremental-jsx-parser";

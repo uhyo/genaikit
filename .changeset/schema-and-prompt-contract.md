@@ -1,5 +1,5 @@
 ---
-"jsx-incremental-parser": patch
+"@ingenui/incremental-jsx-parser": patch
 ---
 
 Add a tightened schema for untrusted AI-generated JSX, and a prompt contract

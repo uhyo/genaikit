@@ -1,5 +1,5 @@
 {
-  "name": "genuikit",
+  "name": "ingenui",
   "version": "0.0.0",
   "description": "Lightweight Generative UI framework: stream AI-generated Markdown with ui+jsx code fences into a live React tree, with an actions convention and structured feedback for the model.",
   "keywords": [
@@ -16,8 +16,8 @@
   "author": "uhyo",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/uhyo/jsx-incremental-parser.git",
-    "directory": "packages/genuikit"
+    "url": "git+https://github.com/uhyo/genaikit.git",
+    "directory": "packages/ingenui"
   },
   "files": [
     "dist"
@@ -47,7 +47,7 @@
     "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
-    "jsx-incremental-parser": "workspace:*"
+    "@ingenui/incremental-jsx-parser": "workspace:*"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.3",

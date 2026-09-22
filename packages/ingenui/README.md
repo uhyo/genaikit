@@ -1,9 +1,9 @@
-# genuikit
+# ingenui
 
 A **lightweight Generative UI framework**: stream an AI-generated Markdown
 message into a live React tree, where fenced ```` ```ui+jsx ```` code blocks
 render as **interactive UI** through
-[`jsx-incremental-parser`](../jsx-incremental-parser).
+[`@ingenui/incremental-jsx-parser`](../incremental-jsx-parser).
 
 The model writes ordinary Markdown; wherever it wants real UI, it opens a
 `ui+jsx` fence:
@@ -20,7 +20,7 @@ Here are your options:
 Let me know if you have questions!
 ````
 
-genuikit renders the Markdown around it, streams the fence contents through
+ingenui renders the Markdown around it, streams the fence contents through
 the incremental JSX parser (with a `<Pending />` placeholder at the streaming
 frontier), and owns the three conventions that close the loop with the model:
 
@@ -28,7 +28,7 @@ frontier), and owns the three conventions that close the loop with the model:
   it (plus the JSX schema) for the generating model's system prompt.
 - **The `actions` variable** — UI-to-conversation bridge. The app declares
   actions; the model wires them wherever a function is expected
-  (`onClick={actions.submit}`); when the user triggers one, genuikit hands the
+  (`onClick={actions.submit}`); when the user triggers one, ingenui hands the
   app the canonical next request: ``The `actions.submit` action was fired by
   the user.`` By default the model may also **define its own actions** just by
   referencing them — no declaration syntax needed (`dynamicActions: false`
@@ -48,14 +48,14 @@ arrives (a crash caused by a temporarily-truncated tree heals itself).
 ## Install
 
 ```sh
-npm install genuikit
-# react is a peer dependency (>= 18); jsx-incremental-parser comes with it
+npm install ingenui
+# react is a peer dependency (>= 18); @ingenui/incremental-jsx-parser comes with it
 ```
 
 ## Quick start
 
 ```tsx
-import { useGenUiMessage } from "genuikit/react";
+import { useGenUiMessage } from "ingenui/react";
 
 function AssistantMessage({ stream }: { stream: ReadableStream<Uint8Array> }) {
   const { node, message } = useGenUiMessage(stream, {
@@ -85,7 +85,7 @@ function AssistantMessage({ stream }: { stream: ReadableStream<Uint8Array> }) {
 And on the prompt side:
 
 ```ts
-import { formatGenUiPrompt } from "genuikit";
+import { formatGenUiPrompt } from "ingenui";
 
 const systemPrompt = `You are a helpful assistant …
 
@@ -103,7 +103,7 @@ model knows precisely what it may emit.
 
 ## API
 
-### `createGenUiMessage(source, options?)` — `genuikit`
+### `createGenUiMessage(source, options?)` — `ingenui`
 
 The core store for **one streamed message**. Shaped as a drop-in for
 `useSyncExternalStore`, like the underlying parser:
@@ -142,7 +142,7 @@ message.getIssueReport(); // => string | null — feedback for the model
 `onJsxError` is not an option here — the parser's structured errors flow into
 the issue channel instead (`onIssue` / `getIssues`).
 
-### `useGenUiMessage(source, options?)` — `genuikit/react`
+### `useGenUiMessage(source, options?)` — `ingenui/react`
 
 React hook: creates the message from `source` (re-created when the source
 identity changes, disposed on unmount) and subscribes via

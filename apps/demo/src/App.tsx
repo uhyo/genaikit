@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { useIncrementalJsx } from "jsx-incremental-parser/react";
-import type { GenUiIssue } from "genuikit";
-import { useGenUiMessage } from "genuikit/react";
+import { useIncrementalJsx } from "@ingenui/incremental-jsx-parser/react";
+import type { GenUiIssue } from "ingenui";
+import { useGenUiMessage } from "ingenui/react";
 
 import { componentNames, demoComponents } from "./components";
 import { jsxSamples, markdownSamples, type Sample } from "./samples";
@@ -22,7 +22,7 @@ interface ModeInfo {
 }
 
 const MODES: ModeInfo[] = [
-  { id: "genui", label: "genuikit · Markdown + ui+jsx", samples: markdownSamples },
+  { id: "genui", label: "ingenui · Markdown + ui+jsx", samples: markdownSamples },
   { id: "jsx", label: "parser · raw JSX", samples: jsxSamples },
 ];
 
@@ -72,7 +72,7 @@ export function App() {
           Generative UI toolchain <span className="masthead__dot">●</span> live demo
         </h1>
         <p>
-          A streamed message becomes a <strong>live React tree</strong>. In genuikit mode the stream
+          A streamed message becomes a <strong>live React tree</strong>. In ingenui mode the stream
           is Markdown where <code>```ui+jsx</code> code fences render as interactive UI (with{" "}
           <code>actions.*</code> wiring events back to the conversation); in parser mode it is raw
           JSX. Either way, what has not arrived yet is a single <code>&lt;Pending /&gt;</code>{" "}

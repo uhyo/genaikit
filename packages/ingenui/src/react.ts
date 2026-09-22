@@ -1,5 +1,5 @@
 /**
- * React hook entry point (`genuikit/react`).
+ * React hook entry point (`ingenui/react`).
  *
  * Note: a stream source can only be consumed once. Under React StrictMode's
  * development double-invocation, pass a stable `source` (e.g. a memoized
@@ -11,7 +11,7 @@ import type { ReactNode } from "react";
 
 import type { GenUiMessage, GenUiMessageOptions } from "./message";
 import { createGenUiMessage } from "./message";
-import type { JsxStreamSource } from "jsx-incremental-parser/core";
+import type { JsxStreamSource } from "@ingenui/incremental-jsx-parser/core";
 
 export type { GenUiMessage, GenUiMessageOptions } from "./message";
 
