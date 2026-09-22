@@ -1,5 +1,5 @@
 ---
-"jsx-incremental-parser": minor
+"jsx-incremental-parser": patch
 ---
 
 Text now follows real JSX parser semantics (Babel/TypeScript) instead of being kept raw:

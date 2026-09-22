@@ -1,5 +1,5 @@
 ---
-"jsx-incremental-parser": minor
+"jsx-incremental-parser": patch
 ---
 
 Generalize the schema into a lightweight prop type system. What was a

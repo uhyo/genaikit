@@ -1,5 +1,5 @@
 ---
-"jsx-incremental-parser": minor
+"jsx-incremental-parser": patch
 ---
 
 Initial release: incrementally parse a streamed JSX string into a live React

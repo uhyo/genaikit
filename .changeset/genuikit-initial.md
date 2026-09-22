@@ -1,5 +1,5 @@
 ---
-"genuikit": minor
+"genuikit": patch
 ---
 
 Initial release: a lightweight Generative UI framework wrapping
