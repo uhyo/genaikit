@@ -1,5 +1,5 @@
 ---
-"jsx-incremental-parser": minor
+"jsx-incremental-parser": patch
 ---
 
 Restructure error handling into two channels split by recoverability.

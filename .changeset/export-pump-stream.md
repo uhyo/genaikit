@@ -1,5 +1,5 @@
 ---
-"jsx-incremental-parser": minor
+"jsx-incremental-parser": patch
 ---
 
 Export the `pumpStream` stream driver (and its `StreamSink` / `StreamHandle` /
