@@ -141,6 +141,11 @@ like `apps/demo` are never versioned or published).
    ```
    Pick the affected package(s) and bump (patch/minor/major) and describe the
    change. Commit the generated `.changeset/*.md` file with the PR.
+
+   **Early development: always pick `patch`.** Versions must stay within
+   `0.0.x` for now, whatever the change — Changesets has no config to cap
+   versions, so the bump choice in each changeset is the only control. Never
+   select `minor` or `major` until the maintainer lifts this rule.
 2. **On merge to `master`**, the release workflow opens (or updates) a
    "Version Packages" PR that applies the pending changesets, bumps the
    versions, and updates each package's `CHANGELOG.md`.
