@@ -20,12 +20,12 @@ importers:
 
   apps/demo:
     dependencies:
-      genuikit:
+      '@ingenui/incremental-jsx-parser':
         specifier: workspace:*
-        version: link:../../packages/genuikit
-      jsx-incremental-parser:
+        version: link:../../packages/incremental-jsx-parser
+      ingenui:
         specifier: workspace:*
-        version: link:../../packages/jsx-incremental-parser
+        version: link:../../packages/ingenui
       react:
         specifier: 19.2.7
         version: 19.2.7
@@ -52,11 +52,7 @@ importers:
         specifier: 4.103.0
         version: 4.103.0
 
-  packages/genuikit:
-    dependencies:
-      jsx-incremental-parser:
-        specifier: workspace:*
-        version: link:../jsx-incremental-parser
+  packages/incremental-jsx-parser:
     devDependencies:
       '@arethetypeswrong/cli':
         specifier: 0.18.3
@@ -98,7 +94,11 @@ importers:
         specifier: 4.1.9
         version: 4.1.9(@types/node@26.0.0)(@vitest/coverage-v8@4.1.9)(happy-dom@20.10.6)(vite@8.0.16(@types/node@26.0.0)(esbuild@0.28.1))
 
-  packages/jsx-incremental-parser:
+  packages/ingenui:
+    dependencies:
+      '@ingenui/incremental-jsx-parser':
+        specifier: workspace:*
+        version: link:../incremental-jsx-parser
     devDependencies:
       '@arethetypeswrong/cli':
         specifier: 0.18.3

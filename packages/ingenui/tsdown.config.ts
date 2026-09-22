@@ -12,9 +12,9 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   treeshake: true,
-  // React is a peer and jsx-incremental-parser a regular dependency; neither
+  // React is a peer and @ingenui/incremental-jsx-parser a regular dependency; neither
   // is bundled.
   deps: {
-    neverBundle: ["react", "react-dom", "react/jsx-runtime", "jsx-incremental-parser"],
+    neverBundle: ["react", "react-dom", "react/jsx-runtime", "@ingenui/incremental-jsx-parser"],
   },
 });

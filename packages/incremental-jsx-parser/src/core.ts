@@ -1,7 +1,7 @@
 /**
  * Framework-agnostic incremental JSX parser core.
  *
- * This is the low-level, push-based entry point (`jsx-incremental-parser/core`).
+ * This is the low-level, push-based entry point (`@ingenui/incremental-jsx-parser/core`).
  * It emits a renderer-independent AST snapshot; the React adapter (the package
  * root entry) is a thin layer on top. This module has **zero** React dependency.
  */

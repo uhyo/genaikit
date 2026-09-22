@@ -1,5 +1,5 @@
 ---
-"jsx-incremental-parser": patch
+"@ingenui/incremental-jsx-parser": patch
 ---
 
 Report source locations on JSX errors. Every `JsxErrorEvent` now carries a

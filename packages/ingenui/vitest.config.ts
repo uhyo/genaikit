@@ -9,9 +9,9 @@ const fromHere = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 export default defineConfig({
   resolve: {
     alias: {
-      "jsx-incremental-parser/react": fromHere("../jsx-incremental-parser/src/react.ts"),
-      "jsx-incremental-parser/core": fromHere("../jsx-incremental-parser/src/core.ts"),
-      "jsx-incremental-parser": fromHere("../jsx-incremental-parser/src/index.ts"),
+      "@ingenui/incremental-jsx-parser/react": fromHere("../incremental-jsx-parser/src/react.ts"),
+      "@ingenui/incremental-jsx-parser/core": fromHere("../incremental-jsx-parser/src/core.ts"),
+      "@ingenui/incremental-jsx-parser": fromHere("../incremental-jsx-parser/src/index.ts"),
     },
   },
   test: {

@@ -1,5 +1,5 @@
 /**
- * React hook entry point (`jsx-incremental-parser/react`).
+ * React hook entry point (`@ingenui/incremental-jsx-parser/react`).
  *
  * `useIncrementalJsx` drives an {@link IncrementalJsxParser} through
  * `useSyncExternalStore`, so the component re-renders exactly when the parsed

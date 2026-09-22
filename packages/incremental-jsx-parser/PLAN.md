@@ -1,4 +1,4 @@
-# Implementation Plan: `jsx-incremental-parser`
+# Implementation Plan: `@ingenui/incremental-jsx-parser`
 
 This document turns [`GOAL.md`](./GOAL.md) into a concrete, buildable plan. It
 fills in the details the goal leaves open (stream type, component resolution,
@@ -93,7 +93,7 @@ exports.
 ### 3.1 React adapter (primary, documented API)
 
 ```ts
-import { createIncrementalJsxParser } from "jsx-incremental-parser";
+import { createIncrementalJsxParser } from "@ingenui/incremental-jsx-parser";
 
 const parser = createIncrementalJsxParser(source, {
   components: { Card, Button },     // tag name -> React component
@@ -115,7 +115,7 @@ The returned object is intentionally shaped to be a drop‑in for React's
 ### 3.2 React hook
 
 ```ts
-import { useIncrementalJsx } from "jsx-incremental-parser/react";
+import { useIncrementalJsx } from "@ingenui/incremental-jsx-parser/react";
 
 function StreamedUI({ stream }: { stream: ReadableStream<Uint8Array> }) {
   return useIncrementalJsx(stream, { components: { Card, Button } });
@@ -129,7 +129,7 @@ source identity changes).
 ### 3.3 Core (framework‑agnostic)
 
 ```ts
-import { createParser } from "jsx-incremental-parser/core";
+import { createParser } from "@ingenui/incremental-jsx-parser/core";
 
 const core = createParser();        // low-level, push-based
 core.write(chunk);                  // feed a string chunk
@@ -398,7 +398,7 @@ Defaults chosen so work can proceed; revisit if requirements differ.
 
 ## 12. Deliverables
 
-- `jsx-incremental-parser` package: `/core`, `/` (React adapter),
+- `@ingenui/incremental-jsx-parser` package: `/core`, `/` (React adapter),
   `/react` (hook).
 - Test suite (unit + property + hook) and CI.
 - README with API reference and a streaming example.

@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "jsx-incremental-parser-demo",
+  "name": "ingenui-demo",
   "compatibility_date": "2026-06-20",
   // Assets-only Worker: no `main` script, Cloudflare just serves the built SPA
   // from `./dist`. `single-page-application` rewrites unknown paths to

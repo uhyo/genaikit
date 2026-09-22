@@ -10,7 +10,7 @@
  * change bumps `resetKey`, which clears the error state and retries, so a
  * crash caused by a temporarily-truncated tree heals itself as more of the
  * stream arrives. If the final content still crashes, the boundary stays on
- * the fallback and the error is reported through `onError` (which genuikit
+ * the fallback and the error is reported through `onError` (which ingenui
  * records as a `render-error` issue for the model).
  */
 

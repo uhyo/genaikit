@@ -1,8 +1,8 @@
 {
-  "name": "jsx-incremental-parser-demo",
+  "name": "ingenui-demo",
   "version": "0.0.0",
   "private": true,
-  "description": "Interactive demo for jsx-incremental-parser: stream JSX into a live React tree.",
+  "description": "Interactive demo for @ingenui/incremental-jsx-parser: stream JSX into a live React tree.",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,8 +13,8 @@
     "cf:preview": "vite build && wrangler dev"
   },
   "dependencies": {
-    "genuikit": "workspace:*",
-    "jsx-incremental-parser": "workspace:*",
+    "@ingenui/incremental-jsx-parser": "workspace:*",
+    "ingenui": "workspace:*",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },

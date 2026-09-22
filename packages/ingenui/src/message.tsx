@@ -1,5 +1,5 @@
 /**
- * `createGenUiMessage` — the heart of genuikit.
+ * `createGenUiMessage` — the heart of ingenui.
  *
  * One *message* is one streamed AI response: Markdown text with any number of
  * `ui+jsx` fenced blocks. The stream is split incrementally (see
@@ -17,10 +17,13 @@
 import { Fragment } from "react";
 import type { ReactNode } from "react";
 
-import type { IncrementalJsxParser, IncrementalJsxParserOptions } from "jsx-incremental-parser";
-import { createIncrementalJsxParser } from "jsx-incremental-parser";
-import type { JsxStreamSource } from "jsx-incremental-parser/core";
-import { pumpStream } from "jsx-incremental-parser/core";
+import type {
+  IncrementalJsxParser,
+  IncrementalJsxParserOptions,
+} from "@ingenui/incremental-jsx-parser";
+import { createIncrementalJsxParser } from "@ingenui/incremental-jsx-parser";
+import type { JsxStreamSource } from "@ingenui/incremental-jsx-parser/core";
+import { pumpStream } from "@ingenui/incremental-jsx-parser/core";
 
 import type { ActionEvent, ActionsDefinition } from "./actions";
 import { createActionsVariable } from "./actions";

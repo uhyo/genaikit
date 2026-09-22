@@ -1,13 +1,14 @@
 {
-  "name": "jsx-incremental-parser",
+  "name": "ingenui",
   "version": "0.0.0",
-  "description": "Incrementally parse a streamed JSX string into a live React snapshot, rendering not-yet-arrived parts as <Pending />.",
+  "description": "Lightweight Generative UI framework: stream AI-generated Markdown with ui+jsx code fences into a live React tree, with an actions convention and structured feedback for the model.",
   "keywords": [
     "ai",
+    "generative-ui",
     "incremental",
     "jsx",
     "llm",
-    "parser",
+    "markdown",
     "react",
     "streaming"
   ],
@@ -15,8 +16,8 @@
   "author": "uhyo",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/uhyo/jsx-incremental-parser.git",
-    "directory": "packages/jsx-incremental-parser"
+    "url": "git+https://github.com/uhyo/ingenui.git",
+    "directory": "packages/ingenui"
   },
   "files": [
     "dist"
@@ -32,10 +33,6 @@
       "types": "./dist/react.d.ts",
       "default": "./dist/react.js"
     },
-    "./core": {
-      "types": "./dist/core.d.ts",
-      "default": "./dist/core.js"
-    },
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -48,6 +45,9 @@
     "publint": "publint",
     "attw": "attw --pack --profile esm-only",
     "prepublishOnly": "pnpm run build"
+  },
+  "dependencies": {
+    "@ingenui/incremental-jsx-parser": "workspace:*"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.3",
@@ -66,11 +66,6 @@
   },
   "peerDependencies": {
     "react": ">=18"
-  },
-  "peerDependenciesMeta": {
-    "react": {
-      "optional": true
-    }
   },
   "engines": {
     "node": ">=20"

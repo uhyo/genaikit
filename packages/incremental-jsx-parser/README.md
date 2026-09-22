@@ -1,4 +1,4 @@
-# jsx-incremental-parser
+# @ingenui/incremental-jsx-parser
 
 Incrementally parse a **streamed JSX string** into a **live React tree**.
 
@@ -22,14 +22,14 @@ shimmer exactly where the next content will appear.
 ## Install
 
 ```sh
-npm install jsx-incremental-parser
+npm install @ingenui/incremental-jsx-parser
 # react / react-dom are peer dependencies (>= 18)
 ```
 
 ## Quick start (React hook)
 
 ```tsx
-import { useIncrementalJsx } from "jsx-incremental-parser/react";
+import { useIncrementalJsx } from "@ingenui/incremental-jsx-parser/react";
 
 function StreamedUI({ stream }: { stream: ReadableStream<Uint8Array> }) {
   return useIncrementalJsx(stream, {
@@ -54,7 +54,7 @@ shimmer at the `<Pending />` frontier:
 
 ```sh
 pnpm install          # once, at the repo root
-pnpm --filter jsx-incremental-parser-demo dev
+pnpm --filter ingenui-demo dev
 ```
 
 ## The core idea: a single frontier
@@ -104,12 +104,12 @@ nothing and is reported through `onJsxError`.
 
 ## API
 
-### `useIncrementalJsx(source, options?)` — `jsx-incremental-parser/react`
+### `useIncrementalJsx(source, options?)` — `@ingenui/incremental-jsx-parser/react`
 
 React hook returning the live `ReactNode`. Re-creates the parser when `source`
 identity changes and disposes it on unmount.
 
-### `createIncrementalJsxParser(source, options?)` — `jsx-incremental-parser`
+### `createIncrementalJsxParser(source, options?)` — `@ingenui/incremental-jsx-parser`
 
 Lower-level React store, shaped as a drop-in for `useSyncExternalStore`:
 
@@ -257,7 +257,7 @@ variables (declared types or shallow value shapes only, never values) — into
 text for the system prompt of the generating model:
 
 ```ts
-import { formatPromptContract } from "jsx-incremental-parser";
+import { formatPromptContract } from "@ingenui/incremental-jsx-parser";
 
 const schema = {
   components: { Card: { component: Card, props: { title: "string" } }, Button },
@@ -277,13 +277,13 @@ Together with `onJsxError` + `formatJsxError` this closes the loop: the
 contract tells the model what it may emit, and the events tell it what it
 got wrong.
 
-### `createParser(options?)` — `jsx-incremental-parser/core`
+### `createParser(options?)` — `@ingenui/incremental-jsx-parser/core`
 
 Framework-agnostic, push-based core that emits a renderer-independent AST. Zero
 React dependency.
 
 ```ts
-import { createParser } from "jsx-incremental-parser/core";
+import { createParser } from "@ingenui/incremental-jsx-parser/core";
 
 const core = createParser();
 core.write("<div>partial");
@@ -354,7 +354,7 @@ away. `onJsxError` is the single, unified error channel for exactly that:
   stream is split.
 
 ```ts
-import { formatJsxError, type JsxErrorEvent } from "jsx-incremental-parser";
+import { formatJsxError, type JsxErrorEvent } from "@ingenui/incremental-jsx-parser";
 
 const parser = createIncrementalJsxParser(stream, {
   components: { Card, Button },

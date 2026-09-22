@@ -7,7 +7,7 @@ import type { GenUiIssue } from "./issues";
 import type { GenUiMessageOptions } from "./message";
 import { createGenUiMessage } from "./message";
 
-// Seeded generator of streamed genuikit messages (markdown + ui+jsx fences,
+// Seeded generator of streamed ingenui messages (markdown + ui+jsx fences,
 // valid and invalid), checking the package-level counterpart of the parser's
 // chunk-independence property: the final rendered result — and the collected
 // issues — must not depend on how the stream is split into chunks.

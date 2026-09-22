@@ -1,15 +1,15 @@
 /**
  * The `actions` convention.
  *
- * genuikit reserves one predefined variable, **`actions`**, as the bridge from
+ * ingenui reserves one predefined variable, **`actions`**, as the bridge from
  * AI-generated UI back to the conversation. The host app declares the actions
  * it supports; the model wires them wherever a function is expected
  * (`<button onClick={actions.submit}>`); and when the user triggers one,
- * genuikit emits an {@link ActionEvent} whose `message` is the canonical next
+ * ingenui emits an {@link ActionEvent} whose `message` is the canonical next
  * user-turn text for the model ("The `actions.submit` action was fired by the
  * user."). The host app forwards that message as the next request.
  *
- * With **dynamic actions** (genuikit's default; opt out with
+ * With **dynamic actions** (ingenui's default; opt out with
  * `dynamicActions: false`), the model may also *define its own*
  * actions simply by referencing them — `onClick={actions.choosePlanPro}` needs
  * no declaration; the name is the definition. This is safe because an
@@ -21,7 +21,7 @@
  * resolution accepts and type-infers as `"function"` — no parser changes.
  */
 
-import type { SchemaType } from "jsx-incremental-parser";
+import type { SchemaType } from "@ingenui/incremental-jsx-parser";
 
 /** A host-side handler run (in addition to `onAction`) when an action fires. */
 export type ActionHandler = (...args: readonly unknown[]) => void;

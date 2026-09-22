@@ -3,7 +3,7 @@
  *
  * - `jsxSamples` are raw JSX strings within the parser's supported subset —
  *   fed straight to `useIncrementalJsx`.
- * - `markdownSamples` are genuikit messages: Markdown where ```ui+jsx code
+ * - `markdownSamples` are ingenui messages: Markdown where ```ui+jsx code
  *   fences render as live UI, `actions.*` references wire interactivity
  *   (model-defined names allowed by default), and problems come back as a
  *   feedback report for the model.
@@ -45,7 +45,7 @@ export const jsxSamples: Sample[] = [
     <Avatar initials="UH" name="uhyo" />
     <CardBody>
       <Title>uhyo</Title>
-      <Text>Maintainer of jsx-incremental-parser.</Text>
+      <Text>Maintainer of @ingenui/incremental-jsx-parser.</Text>
       <>
         <Badge tone="info">TypeScript</Badge>
         <Badge tone="neutral">React</Badge>
@@ -127,7 +127,7 @@ alternatives. A few things reviewers loved:
     source: `## Pick a plan
 
 Both plans include unlimited projects. The action names below are
-**invented by the model** — genuikit's dynamic actions resolve them without
+**invented by the model** — ingenui's dynamic actions resolve them without
 any host-side declaration:
 
 \`\`\`ui+jsx
@@ -164,7 +164,7 @@ const parser = createGenUiMessage(stream, { components });
 
 \`\`\`ui+jsx
 <Callout tone="info">
-  Rendered by <Badge tone="success">genuikit</Badge> via jsx-incremental-parser.
+  Rendered by <Badge tone="success">ingenui</Badge> via @ingenui/incremental-jsx-parser.
 </Callout>
 \`\`\`
 `,

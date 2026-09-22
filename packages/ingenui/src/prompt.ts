@@ -1,13 +1,13 @@
 /**
- * The prompt direction of the loop: serialize the genuikit conventions — the
+ * The prompt direction of the loop: serialize the ingenui conventions — the
  * Markdown + `ui+jsx` fence format, the `actions` convention, and the JSX
  * schema (via the parser's `formatPromptContract`) — into text for the system
  * prompt of the generating model. Pair it with `getIssueReport()` for the
  * feedback direction.
  */
 
-import type { PromptContractOptions, SchemaType } from "jsx-incremental-parser";
-import { formatPromptContract } from "jsx-incremental-parser";
+import type { PromptContractOptions, SchemaType } from "@ingenui/incremental-jsx-parser";
+import { formatPromptContract } from "@ingenui/incremental-jsx-parser";
 
 import type { ActionsDefinition } from "./actions";
 
@@ -27,7 +27,7 @@ export interface GenUiPromptOptions extends PromptContractOptions {
 }
 
 /**
- * Format the system-prompt section describing how to write a genuikit
+ * Format the system-prompt section describing how to write a ingenui
  * message: Markdown with embedded `ui+jsx` blocks, the available actions,
  * and the exact JSX subset/schema the blocks must follow.
  */

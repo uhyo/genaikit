@@ -266,7 +266,7 @@ code {
   min-height: 240px;
 }
 
-/* Markdown rendered by genuikit inside the surface. */
+/* Markdown rendered by ingenui inside the surface. */
 .render-surface h1,
 .render-surface h2,
 .render-surface h3 {
@@ -360,7 +360,7 @@ code {
   color: var(--muted);
 }
 
-/* genuikit action log: the next-request messages produced by actions.* */
+/* ingenui action log: the next-request messages produced by actions.* */
 .action-log {
   margin-top: 14px;
   padding: 12px 14px;
@@ -376,7 +376,7 @@ code {
   color: var(--muted);
 }
 
-/* genuikit feedback report (getIssueReport) */
+/* ingenui feedback report (getIssueReport) */
 .report {
   margin-top: 14px;
   padding: 12px 14px;

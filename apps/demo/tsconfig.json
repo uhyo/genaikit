@@ -15,11 +15,13 @@
     "noEmit": true,
     "types": ["node"],
     "paths": {
-      "jsx-incremental-parser/react": ["../../packages/jsx-incremental-parser/src/react.ts"],
-      "jsx-incremental-parser/core": ["../../packages/jsx-incremental-parser/src/core.ts"],
-      "jsx-incremental-parser": ["../../packages/jsx-incremental-parser/src/index.ts"],
-      "genuikit/react": ["../../packages/genuikit/src/react.ts"],
-      "genuikit": ["../../packages/genuikit/src/index.ts"]
+      "@ingenui/incremental-jsx-parser/react": [
+        "../../packages/incremental-jsx-parser/src/react.ts"
+      ],
+      "@ingenui/incremental-jsx-parser/core": ["../../packages/incremental-jsx-parser/src/core.ts"],
+      "@ingenui/incremental-jsx-parser": ["../../packages/incremental-jsx-parser/src/index.ts"],
+      "ingenui/react": ["../../packages/ingenui/src/react.ts"],
+      "ingenui": ["../../packages/ingenui/src/index.ts"]
     }
   },
   "include": ["src", "vite.config.ts"]
