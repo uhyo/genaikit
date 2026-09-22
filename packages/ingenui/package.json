@@ -1,6 +1,6 @@
 {
   "name": "ingenui",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Lightweight Generative UI framework: stream AI-generated Markdown with ui+jsx code fences into a live React tree, with an actions convention and structured feedback for the model.",
   "keywords": [
     "ai",
