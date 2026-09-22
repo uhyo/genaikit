@@ -16,7 +16,7 @@
   "author": "uhyo",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/uhyo/genaikit.git",
+    "url": "git+https://github.com/uhyo/ingenui.git",
     "directory": "packages/ingenui"
   },
   "files": [

@@ -1,5 +1,7 @@
 # ingenui
 
+> Pronounced **in-JEN-you-ee** — a prefix of _ingenuity_ that contains _GenUI_.
+
 A **lightweight Generative UI framework**: stream an AI-generated Markdown
 message into a live React tree, where fenced ```` ```ui+jsx ```` code blocks
 render as **interactive UI** through

@@ -7,7 +7,7 @@
   "author": "uhyo",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/uhyo/genaikit.git"
+    "url": "git+https://github.com/uhyo/ingenui.git"
   },
   "type": "module",
   "scripts": {
