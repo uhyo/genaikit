@@ -20,8 +20,14 @@
  *
  * The renderer is pure and total — called repeatedly on a *growing* prefix of
  * the document while it streams, so it must render any truncated input
- * reasonably (an unterminated fence is a code block to the end, an
- * unterminated emphasis renders literally, …).
+ * reasonably (an unterminated fence is a code block to the end, …). With
+ * `streaming: true`, the last line is treated as the **frontier** that may
+ * still grow: inline markup opened there renders optimistically instead of
+ * showing its raw markers (`**bold` → **bold**, `` `code `` → code,
+ * `[label](https://exa` → label), and a trailing marker that could still
+ * become syntax (`*`, `` ` ``, `\`, or a line that is just `-`/`*`/`#`) is
+ * withheld until the next character decides it. Without `streaming`, an
+ * unterminated emphasis renders literally.
  */
 
 import type { ReactNode } from "react";
@@ -33,6 +39,12 @@ const THEMATIC_BREAK = /^ {0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3
 const BLOCKQUOTE_LINE = /^ {0,3}> ?(.*)$/;
 const LIST_ITEM = /^( *)([-*+]|\d{1,9}[.)])(?:[ \t]+(.*))?$/;
 const BLANK = /^[ \t]*$/;
+/**
+ * A frontier line that is only a block marker with no content yet — it may
+ * still become a list item, a thematic break, a heading, or just prose
+ * (`**bold`, `-5°`, `#tag`), so it is withheld while streaming.
+ */
+const AMBIGUOUS_FRONTIER_LINE = /^ *(?:(?:[-*+_][ \t]*){1,2}|#{1,6})$/;
 
 /** True when a URL is acceptable for a link (`href`). */
 function isSafeLinkUrl(url: string): boolean {
@@ -65,6 +77,46 @@ function isPunctuation(ch: string): boolean {
   return /[!-/:-@[-`{-~]/.test(ch);
 }
 
+function isWhitespace(ch: string | undefined): boolean {
+  return ch !== undefined && /\s/.test(ch);
+}
+
+function isAlphanumeric(ch: string | undefined): boolean {
+  return ch !== undefined && /[\p{L}\p{N}]/u.test(ch);
+}
+
+/**
+ * Whether the emphasis delimiter run `text[start, end)` can open emphasis: it
+ * must be followed by non-whitespace (so `2 * 3` stays literal), and an `_`
+ * run must not be intraword (so `snake_case` stays literal).
+ */
+function canOpenEmphasis(text: string, start: number, end: number): boolean {
+  const after = text[end];
+  if (after === undefined || isWhitespace(after)) return false;
+  return text[start] !== "_" || !isAlphanumeric(text[start - 1]);
+}
+
+/**
+ * Find a closing emphasis delimiter equal to `delim` at or after `from`. A
+ * closer must follow non-whitespace, and an `_` closer must not be intraword.
+ */
+function findEmphasisClose(text: string, delim: string, from: number): number {
+  for (let i = from; i <= text.length - delim.length; i++) {
+    if (text[i] === "\\") {
+      i++;
+      continue;
+    }
+    if (!text.startsWith(delim, i) || isWhitespace(text[i - 1])) continue;
+    if (delim[0] === "_") {
+      let runEnd = i;
+      while (text[runEnd] === "_") runEnd++;
+      if (isAlphanumeric(text[runEnd])) continue;
+    }
+    return i;
+  }
+  return -1;
+}
+
 /** Find a closing delimiter run equal to `delim` at or after `from`. */
 function findClose(text: string, delim: string, from: number): number {
   for (let i = from; i <= text.length - delim.length; i++) {
@@ -77,8 +129,12 @@ function findClose(text: string, delim: string, from: number): number {
   return -1;
 }
 
-/** Render inline Markdown into React nodes. */
-function renderInline(text: string, keys: Keys): ReactNode[] {
+/**
+ * Render inline Markdown into React nodes. `frontier` marks that the text ends
+ * at the streaming frontier (it may still grow): unterminated markup then
+ * renders optimistically, and a trailing marker is withheld.
+ */
+function renderInline(text: string, keys: Keys, frontier = false): ReactNode[] {
   const out: ReactNode[] = [];
   let plain = "";
   const flush = (): void => {
@@ -95,6 +151,11 @@ function renderInline(text: string, keys: Keys): ReactNode[] {
     if (ch === "\\" && i + 1 < text.length && isPunctuation(text[i + 1]!)) {
       plain += text[i + 1]!;
       i += 2;
+      continue;
+    }
+    if (ch === "\\" && frontier && i + 1 === text.length) {
+      // Possibly an escape whose character has not arrived yet.
+      i++;
       continue;
     }
 
@@ -128,21 +189,52 @@ function renderInline(text: string, keys: Keys): ReactNode[] {
         i = close + run.length;
         continue;
       }
+      if (frontier) {
+        // Unterminated at the frontier: a code span in progress (a bare
+        // trailing run renders nothing until its content arrives).
+        flush();
+        if (runEnd < text.length) out.push(<code key={keys.next++}>{text.slice(runEnd)}</code>);
+        i = text.length;
+        continue;
+      }
       plain += run;
       i = runEnd;
       continue;
     }
 
     if (ch === "*" || ch === "_") {
+      let runEnd = i;
+      while (runEnd < text.length && text[runEnd] === ch) runEnd++;
+      if (frontier && runEnd === text.length) {
+        // A trailing run may still open or close emphasis: withhold it.
+        i = runEnd;
+        continue;
+      }
       const double = text[i + 1] === ch;
       const delim = double ? ch + ch : ch;
-      let close = findClose(text, delim, i + delim.length);
+      let close = canOpenEmphasis(text, i, runEnd)
+        ? findEmphasisClose(text, delim, i + delim.length)
+        : -1;
+      if (close === -1 && frontier && canOpenEmphasis(text, i, runEnd)) {
+        // Unterminated at the frontier: emphasis in progress runs to the end.
+        flush();
+        const children = renderInline(text.slice(i + delim.length), keys, true);
+        out.push(
+          double ? (
+            <strong key={keys.next++}>{children}</strong>
+          ) : (
+            <em key={keys.next++}>{children}</em>
+          ),
+        );
+        i = text.length;
+        continue;
+      }
       if (close !== -1) {
         // Close at the END of the delimiter run, so `**bold *inner***`
         // nests instead of closing early.
-        let runEnd = close;
-        while (runEnd < text.length && text[runEnd] === ch) runEnd++;
-        close = Math.max(close, runEnd - delim.length);
+        let closeRunEnd = close;
+        while (closeRunEnd < text.length && text[closeRunEnd] === ch) closeRunEnd++;
+        close = Math.max(close, closeRunEnd - delim.length);
         const inner = text.slice(i + delim.length, close);
         if (inner.trim() !== "") {
           flush();
@@ -202,6 +294,14 @@ function renderInline(text: string, keys: Keys): ReactNode[] {
           i = closeParen + 1;
           continue;
         }
+        if (frontier) {
+          // The destination is still streaming: show the label (an image
+          // shows nothing) until the link completes.
+          flush();
+          if (!image) out.push(...renderInline(text.slice(open + 1, closeBracket), keys));
+          i = text.length;
+          continue;
+        }
       }
       plain += ch;
       i++;
@@ -215,8 +315,15 @@ function renderInline(text: string, keys: Keys): ReactNode[] {
   return out;
 }
 
-/** Render a paragraph's lines, turning hard breaks into `<br />`. */
-function renderParagraphContent(lines: readonly string[], keys: Keys): ReactNode[] {
+/**
+ * Render a paragraph's lines, turning hard breaks into `<br />`. `frontier`
+ * marks the last line as the streaming frontier.
+ */
+function renderParagraphContent(
+  lines: readonly string[],
+  keys: Keys,
+  frontier: boolean,
+): ReactNode[] {
   const out: ReactNode[] = [];
   lines.forEach((raw, index) => {
     let line = raw.trim();
@@ -228,7 +335,7 @@ function renderParagraphContent(lines: readonly string[], keys: Keys): ReactNode
         line = line.slice(0, -1);
       }
     }
-    out.push(...renderInline(line, keys));
+    out.push(...renderInline(line, keys, frontier && index === lines.length - 1));
     if (index < lines.length - 1) {
       if (hard) out.push(<br key={keys.next++} />);
       else out.push(" ");
@@ -242,8 +349,12 @@ interface ListParse {
   next: number;
 }
 
-/** Parse the list starting at `lines[start]` (which matches LIST_ITEM). */
-function parseList(lines: readonly string[], start: number, keys: Keys): ListParse {
+/**
+ * Parse the list starting at `lines[start]` (which matches LIST_ITEM).
+ * `open` marks the last element of `lines` as the streaming frontier.
+ */
+function parseList(lines: readonly string[], start: number, keys: Keys, open: boolean): ListParse {
+  const atFrontier = (index: number): boolean => open && index === lines.length - 1;
   const first = LIST_ITEM.exec(lines[start]!)!;
   const baseIndent = first[1]!.length;
   const ordered = /^\d/.test(first[2]!);
@@ -251,30 +362,40 @@ function parseList(lines: readonly string[], start: number, keys: Keys): ListPar
   const items: ReactNode[] = [];
   let i = start;
   while (i < lines.length) {
+    if (atFrontier(i) && AMBIGUOUS_FRONTIER_LINE.test(lines[i]!)) {
+      i++;
+      break;
+    }
     const m = LIST_ITEM.exec(lines[i]!);
     if (!m || m[1]!.length !== baseIndent || /^\d/.test(m[2]!) !== ordered) break;
     const contentIndent = baseIndent + m[2]!.length + 1;
     const texts: string[] = m[3] === undefined ? [] : [m[3]];
+    let lastText = m[3] === undefined ? -1 : i;
     const nested: ReactNode[] = [];
     i++;
     while (i < lines.length) {
       const line = lines[i]!;
       if (BLANK.test(line)) break;
+      if (atFrontier(i) && AMBIGUOUS_FRONTIER_LINE.test(line)) {
+        i++;
+        break;
+      }
       const indent = /^ */.exec(line)![0].length;
       if (indent <= baseIndent) break;
       const sub = LIST_ITEM.exec(line);
       if (sub && sub[1]!.length > baseIndent) {
-        const child = parseList(lines, i, keys);
+        const child = parseList(lines, i, keys, open);
         nested.push(child.node);
         i = child.next;
         continue;
       }
       texts.push(line.slice(Math.min(contentIndent, indent)));
+      lastText = i;
       i++;
     }
     items.push(
       <li key={keys.next++}>
-        {renderParagraphContent(texts, keys)}
+        {renderParagraphContent(texts, keys, atFrontier(lastText))}
         {nested}
       </li>,
     );
@@ -284,13 +405,19 @@ function parseList(lines: readonly string[], start: number, keys: Keys): ListPar
   return { node, next: i };
 }
 
-function parseBlocks(lines: readonly string[], keys: Keys): ReactNode[] {
+/** Parse blocks; `open` marks the last element of `lines` as the streaming frontier. */
+function parseBlocks(lines: readonly string[], keys: Keys, open: boolean): ReactNode[] {
   const out: ReactNode[] = [];
   let i = 0;
   while (i < lines.length) {
     const line = lines[i]!;
 
     if (BLANK.test(line)) {
+      i++;
+      continue;
+    }
+
+    if (open && i === lines.length - 1 && AMBIGUOUS_FRONTIER_LINE.test(line)) {
       i++;
       continue;
     }
@@ -324,7 +451,8 @@ function parseBlocks(lines: readonly string[], keys: Keys): ReactNode[] {
       const level = heading[1]!.length;
       const content = (heading[2] ?? "").replace(/[ \t]+#+$/, "");
       const Tag = `h${level}` as "h1";
-      out.push(<Tag key={keys.next++}>{renderInline(content, keys)}</Tag>);
+      const frontier = open && i === lines.length - 1;
+      out.push(<Tag key={keys.next++}>{renderInline(content, keys, frontier)}</Tag>);
       i++;
       continue;
     }
@@ -343,12 +471,13 @@ function parseBlocks(lines: readonly string[], keys: Keys): ReactNode[] {
         inner.push(m[1]!);
         i++;
       }
-      out.push(<blockquote key={keys.next++}>{parseBlocks(inner, keys)}</blockquote>);
+      const innerOpen = open && i === lines.length;
+      out.push(<blockquote key={keys.next++}>{parseBlocks(inner, keys, innerOpen)}</blockquote>);
       continue;
     }
 
     if (LIST_ITEM.test(line)) {
-      const list = parseList(lines, i, keys);
+      const list = parseList(lines, i, keys, open);
       out.push(list.node);
       i = list.next;
       continue;
@@ -372,9 +501,20 @@ function parseBlocks(lines: readonly string[], keys: Keys): ReactNode[] {
       para.push(next);
       i++;
     }
-    out.push(<p key={keys.next++}>{renderParagraphContent(para, keys)}</p>);
+    const frontier = open && i === lines.length;
+    out.push(<p key={keys.next++}>{renderParagraphContent(para, keys, frontier)}</p>);
   }
   return out;
+}
+
+/** Options for {@link renderMarkdown}. */
+export interface RenderMarkdownOptions {
+  /**
+   * The source is a prefix that may still grow (default `false`): its last
+   * line renders as the streaming frontier — unterminated inline markup shows
+   * optimistically instead of as raw markers.
+   */
+  streaming?: boolean;
 }
 
 /**
@@ -382,7 +522,7 @@ function parseBlocks(lines: readonly string[], keys: Keys): ReactNode[] {
  * subset). Safe on untrusted input: raw HTML is rendered as literal text and
  * link/image URLs are scheme-checked.
  */
-export function renderMarkdown(source: string): ReactNode {
+export function renderMarkdown(source: string, options: RenderMarkdownOptions = {}): ReactNode {
   if (source === "") return null;
-  return parseBlocks(source.split("\n"), { next: 0 });
+  return parseBlocks(source.split("\n"), { next: 0 }, options.streaming === true);
 }

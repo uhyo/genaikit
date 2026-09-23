@@ -35,6 +35,12 @@ import { formatIssueReport } from "./issues";
 import { renderMarkdown as renderMarkdownDefault } from "./markdown";
 import { createFenceSplitter } from "./splitter";
 
+/** Passed to a custom {@link GenUiMessageOptions.renderMarkdown}. */
+export interface MarkdownRenderContext {
+  /** The region may still grow: its last line is the streaming frontier. */
+  streaming: boolean;
+}
+
 export interface GenUiMessageOptions extends Omit<
   IncrementalJsxParserOptions,
   "onJsxError" | "onStreamError"
@@ -74,8 +80,13 @@ export interface GenUiMessageOptions extends Omit<
    * same error.
    */
   onStreamError?: (error: unknown) => void;
-  /** Replace the built-in Markdown renderer for the non-UI regions. */
-  renderMarkdown?: (markdown: string) => ReactNode;
+  /**
+   * Replace the built-in Markdown renderer for the non-UI regions.
+   * `context.streaming` is `true` while the region may still grow (it holds
+   * the stream's frontier), so a renderer can show unterminated markup
+   * optimistically.
+   */
+  renderMarkdown?: (markdown: string, context: MarkdownRenderContext) => ReactNode;
   /**
    * Rendered in place of a `ui+jsx` block whose UI crashed at render time
    * (default: nothing — the block is hidden).
@@ -112,6 +123,7 @@ interface MarkdownSegment {
   committed: string;
   tail: string;
   cachedFor?: string;
+  cachedStreaming?: boolean;
   cachedNode?: ReactNode;
 }
 
@@ -256,11 +268,17 @@ export function createGenUiMessage(
       if (segment.kind === "markdown") {
         const text = segment.committed + segment.tail;
         if (text === "") continue;
+        const segmentStreaming = streaming && segment === currentMarkdown;
         // Cache per text so settled regions keep a stable element identity
         // (cheap React reconciliation), like the parser's frozen subtrees.
-        if (segment.cachedFor !== text) {
+        if (segment.cachedFor !== text || segment.cachedStreaming !== segmentStreaming) {
           segment.cachedFor = text;
-          segment.cachedNode = <Fragment key={`md-${segment.id}`}>{md(text)}</Fragment>;
+          segment.cachedStreaming = segmentStreaming;
+          segment.cachedNode = (
+            <Fragment key={`md-${segment.id}`}>
+              {md(text, { streaming: segmentStreaming })}
+            </Fragment>
+          );
         }
         children.push(segment.cachedNode);
       } else {

@@ -45,7 +45,7 @@ They are forwarded to every `ui+jsx` block's parser. In addition:
 | `dynamicActions` | `boolean`                             | Let the model define its own actions by referencing them: any `actions.<name>` resolves; undeclared names are notify-only (`declared: false`). **Default `true`** — pass `false` to keep the action vocabulary host-owned. |
 | `onAction`       | `(event: ActionEvent) => void`        | Fired when the user triggers an action. `event.message` is the canonical next-request text; `event.declared` distinguishes host-declared from model-defined actions. |
 | `onIssue`        | `(issue: GenUiIssue) => void`         | Fired for every issue as it is found (issues also accumulate on the message). See [issues](./issues.md). |
-| `renderMarkdown` | `(markdown: string) => ReactNode`     | Replace the built-in [Markdown renderer](./markdown.md). |
+| `renderMarkdown` | `(markdown: string, context: { streaming: boolean }) => ReactNode` | Replace the built-in [Markdown renderer](./markdown.md). `streaming` is `true` while the region holds the stream's frontier. |
 | `renderUiError`  | `(blockIndex: number) => ReactNode`   | Rendered in place of a block whose UI crashed (default: nothing — the block is hidden). |
 
 `onJsxError` is not an option here — the parser's structured errors flow into

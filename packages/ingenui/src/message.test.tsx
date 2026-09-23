@@ -111,6 +111,46 @@ describe("createGenUiMessage — rendering", () => {
     await message.done;
     expect(html(message.getSnapshot())).toBe('<div data-md="hello"></div>');
   });
+
+  it("renders unterminated inline markup optimistically at the streaming frontier", async () => {
+    const outer = createPushChannel();
+    const message = createGenUiMessage(outer.source);
+    outer.push("Some **bol");
+    await settle();
+    expect(html(message.getSnapshot())).toBe("<p>Some <strong>bol</strong></p>");
+    outer.push("d** text");
+    await settle();
+    expect(html(message.getSnapshot())).toBe("<p>Some <strong>bold</strong> text</p>");
+    outer.push(" and *unfinished");
+    outer.close();
+    await message.done;
+    // Once the stream ends, an unterminated marker is literal again.
+    expect(html(message.getSnapshot())).toBe(
+      "<p>Some <strong>bold</strong> text and *unfinished</p>",
+    );
+  });
+
+  it("tells a custom markdown renderer which region is still streaming", async () => {
+    const calls: [string, boolean][] = [];
+    const outer = createPushChannel();
+    const message = createGenUiMessage(outer.source, {
+      renderMarkdown: (markdown, { streaming }) => {
+        calls.push([markdown, streaming]);
+        return null;
+      },
+    });
+    outer.push("Before.\n\n```ui+jsx\n<div/>\n```\nAfter");
+    await settle();
+    message.getSnapshot();
+    expect(calls).toEqual([
+      ["Before.\n\n", false],
+      ["After", true],
+    ]);
+    outer.close();
+    await message.done;
+    message.getSnapshot();
+    expect(calls.at(-1)).toEqual(["After", false]);
+  });
 });
 
 describe("createGenUiMessage — actions", () => {

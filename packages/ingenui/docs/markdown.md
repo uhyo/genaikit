@@ -13,8 +13,11 @@ URLs allow only `http:`/`https:`/`mailto:`/relative, and image URLs only
 `http:`/`https:`/relative (`javascript:` &c. render as plain text).
 
 Not supported (v1): setext headings, tables, loose lists, reference links,
-raw HTML, `~~~` fences. Swap in your own renderer with the `renderMarkdown`
-option if you need more.
+raw HTML, `~~~` fences, emphasis spanning line breaks. Swap in your own
+renderer with the `renderMarkdown` option if you need more; it receives
+`{ streaming }` (whether the region still holds the stream's frontier).
+Called directly, `renderMarkdown(source, { streaming: true })` renders the
+built-in frontier behavior.
 
 ## Streaming semantics
 
@@ -24,6 +27,14 @@ option if you need more.
 - Markdown re-renders as its region grows; settled regions keep stable
   element identities (cheap React reconciliation), mirroring the parser's
   frozen subtrees.
+- Inline markup streams without raw markers: at the frontier (the last line
+  of the region still streaming), an unterminated `**strong`, `*em`, or
+  `` `code `` renders as if already closed, and a link shows just its label
+  while its destination streams. A trailing marker that could still become
+  syntax (`*`, `` ` ``, a lone `\`, or a line that is only `-`/`*`/`#`) is
+  withheld until the next character decides it. Once the stream ends, an
+  unterminated marker renders literally again. Emphasis follows CommonMark's
+  flanking rules, so `2 * 3` and `snake_case` stay literal.
 - A partial trailing line that could still become a ```` ```ui+jsx ````
   opener (or a closing fence) is withheld until it resolves, so fences never
   flash as text — and inside a block, JSX still streams character-level the
