@@ -1,0 +1,64 @@
+# Framework-agnostic core — `@ingenui/incremental-jsx-parser/core`
+
+The `/core` entry has **zero React dependency**. Use it to build an adapter
+for another renderer, or to process streamed JSX without rendering it.
+
+## `createParser(options?)`
+
+A push-based parser that emits a renderer-independent AST:
+
+```ts
+import { createParser } from "@ingenui/incremental-jsx-parser/core";
+
+const core = createParser();
+core.write("<div>partial");
+core.getTree(); // => readonly Node[] (immutable AST snapshot, incl. a PendingNode)
+core.subscribe(listener);
+core.end(); // finalize; drops the Pending frontier
+```
+
+`createParser` accepts `mismatchedTag` and `onJsxError` like the React
+adapter (see [error handling](./errors.md)). Since the core knows nothing
+about React components or your data, the parse-time validation events are
+opt-in through callbacks:
+
+| Option             | Signature                                   | Enables                  |
+| ------------------ | ------------------------------------------- | ------------------------ |
+| `isKnownComponent` | `(tag: string) => boolean`                  | `"unknown-component"`    |
+| `isKnownVariable`  | `(path: readonly string[]) => boolean`      | `"unknown-variable"`     |
+| `isAllowedElement` | `(tag: string) => boolean`                  | `"disallowed-element"`   |
+| `checkProp`        | `(tag, prop, value) => string \| null` (a rejection reason, or `null`) | `"invalid-prop"` |
+
+`isKnownVariable` receives the full dot path, so you can validate the root
+name only (`path[0]`) or every segment.
+
+## Helpers
+
+The canonical checks are exported here (they are React-free) — wire them
+into the callbacks above, and apply the same helpers in your renderer so
+reporting and enforcement agree (that is exactly what the React adapter
+does):
+
+- `isElementAllowed(elements, tag)` — the `elements` allowlist check.
+- `checkProp(tag, prop, value, { elements, components, variables, variableTypes })`
+  — the [schema](./schema.md) prop check, including the built-in host rules;
+  `checkPropValue` / `resolveVariableType` are the underlying type
+  primitives.
+- `isComponentName(tag)` — whether a tag is component-like (Capitalized or
+  dotted).
+- `resolveVariablePath(variables, path)` — the canonical variable lookup. The
+  core emits variable references as `VariableNode`s (a dot-notation `path`)
+  and leaves resolving them to the consumer; the React adapter uses this
+  helper for both parse-time validation and render-time resolution, so the
+  two always agree.
+- `formatPromptContract(schema)` — see
+  [the schema as a prompt contract](./schema.md#the-schema-as-a-prompt-contract-formatpromptcontract).
+
+## `pumpStream(source, sink)`
+
+The stream driver behind the React adapter. It normalizes any accepted
+`JsxStreamSource` (`ReadableStream` of bytes or strings, or an
+`AsyncIterable`) into string chunks — decoding bytes with a streaming
+`TextDecoder` — and pushes them into a `{ write, end }` sink, returning a
+`{ done, cancel }` handle. Use it to build your own adapter, or to
+pre-process a stream before it reaches the parser.
