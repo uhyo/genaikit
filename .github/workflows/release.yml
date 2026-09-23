@@ -6,16 +6,30 @@ on:
 
 concurrency: release-${{ github.ref }}
 
-permissions:
-  contents: write
-  pull-requests: write
-  id-token: write
+# Each job declares only the permissions it needs; in particular only the
+# `publish` job gets `id-token: write` (npm trusted publishing).
+permissions: {}
 
+# Changesets v3 sub-actions (changesets/action v2):
+#   select-mode ─┬─ version            pending changesets → open/update the
+#                │                     "Version Packages" PR
+#                └─ pack ─ publish     unpublished versions (the PR was merged)
+#                                      → build + pack tarballs, then publish them
+# Setup steps skip the dependency cache (avoids cache poisoning) and don't
+# persist git credentials; the sub-actions use their `github-token` input,
+# which defaults to the job's GITHUB_TOKEN.
 jobs:
-  release:
+  select-mode:
     runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.select-mode.outputs.mode }}
+      publish-plan-artifact-id: ${{ steps.select-mode.outputs.publish-plan-artifact-id }}
+    permissions:
+      contents: read # actions/checkout
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -24,24 +38,110 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
-          registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # "version" (pending changesets), "publish" (unpublished versions; also
+      # uploads the publish plan as an artifact), or "none".
+      - name: Select Changesets mode
+        id: select-mode
+        uses: changesets/action/select-mode@v2
+
+  version:
+    needs: select-mode
+    if: needs.select-mode.outputs.mode == 'version'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # commit version changes
+      pull-requests: write # open/update the "Version Packages" PR
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create or update the Version Packages PR
+        uses: changesets/action/version@v2
+        with:
+          script: pnpm run version
+
+  pack:
+    needs: select-mode
+    if: needs.select-mode.outputs.mode == 'publish'
+    runs-on: ubuntu-latest
+    outputs:
+      pack-dir-artifact-id: ${{ steps.pack.outputs.pack-dir-artifact-id }}
+    permissions:
+      contents: read # actions/checkout
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm run build
+
+      # `pnpm pack` per package (rewrites `workspace:*` to real versions);
+      # the tarballs + publish plan are uploaded as an artifact.
+      - name: Pack packages
+        id: pack
+        uses: changesets/action/pack@v2
+        with:
+          publish-plan-artifact-id: ${{ needs.select-mode.outputs.publish-plan-artifact-id }}
+
+  publish:
+    needs: pack
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # git tags + GitHub releases
+      id-token: write # npm trusted publishing (OIDC); provenance is automatic
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # For @changesets/cli; nothing is built here, the packed tarballs are
+      # published as-is.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       # Trusted publishing (OIDC) needs npm >= 11.5.1; the runner's bundled npm
-      # may predate it. `changeset publish` shells out to `npm publish`.
+      # may predate it. Publishing a tarball goes through `npm publish`.
       - name: Ensure npm supports trusted publishing
         run: npm install -g npm@latest
 
-      # Opens/updates a "Version Packages" PR, or publishes when it is merged.
-      # Publishing authenticates via npm trusted publishing (OIDC) — no token —
-      # using the `id-token: write` permission above. Provenance is automatic.
-      # changesets/action v2 pairs with @changesets/cli v3 (v1 is for cli v2).
-      # It uses the job's GITHUB_TOKEN by default (`github-token` input).
-      - name: Create Release PR or publish
-        uses: changesets/action@v2
+      - name: Publish packages
+        uses: changesets/action/publish@v2
         with:
-          version-script: pnpm run version
-          publish-script: pnpm run release
+          pack-dir-artifact-id: ${{ needs.pack.outputs.pack-dir-artifact-id }}
