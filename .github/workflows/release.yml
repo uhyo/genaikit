@@ -30,10 +30,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Trusted publishing (OIDC) needs a recent npm; the runner's bundled npm
+      # Trusted publishing (OIDC) needs npm >= 11.5.1; the runner's bundled npm
       # may predate it. `changeset publish` shells out to `npm publish`.
+      # Pinned to 11.x: npm 12 changed `npm info --json` to return an array,
+      # which @changesets/cli 2.x misreads as "never published" and then tries
+      # to re-publish existing versions ("cannot publish over ... 0.0.1").
       - name: Ensure npm supports trusted publishing
-        run: npm install -g npm@latest
+        run: npm install -g npm@11
 
       # Opens/updates a "Version Packages" PR, or publishes when it is merged.
       # Publishing authenticates via npm trusted publishing (OIDC) — no token —
