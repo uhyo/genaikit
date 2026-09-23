@@ -7,6 +7,10 @@ function html(source: string): string {
   return renderToStaticMarkup(<>{renderMarkdown(source)}</>);
 }
 
+function streaming(source: string): string {
+  return renderToStaticMarkup(<>{renderMarkdown(source, { streaming: true })}</>);
+}
+
 describe("renderMarkdown — blocks", () => {
   it("renders paragraphs separated by blank lines", () => {
     expect(html("one\n\ntwo\n")).toBe("<p>one</p><p>two</p>");
@@ -136,5 +140,82 @@ describe("renderMarkdown — safety", () => {
     expect(html("[a](/path) [b](mailto:x@example.com)\n")).toBe(
       '<p><a href="/path">a</a> <a href="mailto:x@example.com">b</a></p>',
     );
+  });
+});
+
+describe("renderMarkdown — flanking", () => {
+  it("does not open emphasis before whitespace", () => {
+    expect(html("** not bold **\n")).toBe("<p>** not bold **</p>");
+  });
+
+  it("does not close emphasis after whitespace", () => {
+    expect(html("*a *b\n")).toBe("<p>*a *b</p>");
+  });
+
+  it("keeps intraword underscores literal", () => {
+    expect(html("snake_case_name\n")).toBe("<p>snake_case_name</p>");
+  });
+});
+
+describe("renderMarkdown — streaming frontier", () => {
+  it("renders unterminated strong and emphasis optimistically", () => {
+    expect(streaming("a **bol")).toBe("<p>a <strong>bol</strong></p>");
+    expect(streaming("a *it")).toBe("<p>a <em>it</em></p>");
+    expect(streaming("a __bol")).toBe("<p>a <strong>bol</strong></p>");
+  });
+
+  it("nests unterminated markup", () => {
+    expect(streaming("**bold *inn")).toBe("<p><strong>bold <em>inn</em></strong></p>");
+    expect(streaming("***both")).toBe("<p><strong><em>both</em></strong></p>");
+  });
+
+  it("withholds a trailing delimiter run until it resolves", () => {
+    expect(streaming("a **")).toBe("<p>a </p>");
+    expect(streaming("**bold*")).toBe("<p><strong>bold</strong></p>");
+    expect(streaming("2 *")).toBe("<p>2 </p>");
+    expect(streaming("2 * 3")).toBe("<p>2 * 3</p>");
+  });
+
+  it("keeps markers that cannot open literal", () => {
+    expect(streaming("snake_ca")).toBe("<p>snake_ca</p>");
+  });
+
+  it("renders an unterminated code span optimistically", () => {
+    expect(streaming("run `npm i")).toBe("<p>run <code>npm i</code></p>");
+    expect(streaming("run `")).toBe("<p>run </p>");
+  });
+
+  it("shows only the label while a link destination streams", () => {
+    expect(streaming("see [the docs](https://exa")).toBe("<p>see the docs</p>");
+    expect(streaming("![alt](https://exa")).toBe("<p></p>");
+  });
+
+  it("withholds a trailing backslash (a pending escape)", () => {
+    expect(streaming("a \\")).toBe("<p>a </p>");
+  });
+
+  it("withholds a frontier line that is only a block marker", () => {
+    expect(streaming("para\n\n*")).toBe("<p>para</p>");
+    expect(streaming("para\n\n#")).toBe("<p>para</p>");
+    expect(streaming("- a\n-")).toBe("<ul><li>a</li></ul>");
+    expect(streaming("- a\n  *")).toBe("<ul><li>a</li></ul>");
+    expect(streaming("**b")).toBe("<p><strong>b</strong></p>");
+  });
+
+  it("applies inside headings, list items, and blockquotes", () => {
+    expect(streaming("# **Ti")).toBe("<h1><strong>Ti</strong></h1>");
+    expect(streaming("- a\n- **b")).toBe("<ul><li>a</li><li><strong>b</strong></li></ul>");
+    expect(streaming("> *q")).toBe("<blockquote><p><em>q</em></p></blockquote>");
+  });
+
+  it("only treats the last line as the frontier", () => {
+    expect(streaming("**a\nb")).toBe("<p>**a b</p>");
+    expect(streaming("# **a\n")).toBe("<h1>**a</h1>");
+    expect(streaming("- **a\n- b")).toBe("<ul><li>**a</li><li>b</li></ul>");
+  });
+
+  it("renders unterminated markup literally when not streaming", () => {
+    expect(html("a **bol")).toBe("<p>a **bol</p>");
+    expect(html("run `npm i")).toBe("<p>run `npm i</p>");
   });
 });

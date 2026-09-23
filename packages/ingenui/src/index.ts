@@ -17,7 +17,7 @@
  */
 
 export { createGenUiMessage } from "./message";
-export type { GenUiMessage, GenUiMessageOptions } from "./message";
+export type { GenUiMessage, GenUiMessageOptions, MarkdownRenderContext } from "./message";
 
 export { formatGenUiPrompt } from "./prompt";
 export type { GenUiPromptOptions } from "./prompt";
@@ -35,6 +35,7 @@ export { formatIssueReport } from "./issues";
 export type { GenUiIssue, IssueListener } from "./issues";
 
 export { renderMarkdown } from "./markdown";
+export type { RenderMarkdownOptions } from "./markdown";
 
 export { UiBlockErrorBoundary } from "./boundary";
 export type { UiBlockErrorBoundaryProps } from "./boundary";
