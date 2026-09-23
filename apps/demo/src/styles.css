@@ -38,10 +38,24 @@ body {
   padding: 32px 20px 64px;
 }
 
-.masthead h1 {
+.masthead__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
   margin: 0 0 6px;
-  font-size: 1.7rem;
-  letter-spacing: -0.02em;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.masthead__logo {
+  display: block;
+  width: auto;
+  height: 72px;
+  max-width: 100%;
+  /* The lockup's viewBox has generous padding; pull the mark to the page edge. */
+  margin-left: -15px;
 }
 
 .masthead__dot {

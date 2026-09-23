@@ -68,8 +68,17 @@ export function App() {
   return (
     <div className="page">
       <header className="masthead">
-        <h1>
-          Generative UI toolchain <span className="masthead__dot">●</span> live demo
+        <h1 className="masthead__title">
+          <img
+            className="masthead__logo"
+            src="/ingenui-lockup-dark.svg"
+            alt="ingenui"
+            width={640}
+            height={168}
+          />
+          <span className="masthead__tag">
+            <span className="masthead__dot">●</span> live demo
+          </span>
         </h1>
         <p>
           A streamed message becomes a <strong>live React tree</strong>. In ingenui mode the stream
