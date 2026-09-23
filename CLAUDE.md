@@ -154,11 +154,17 @@ like `apps/demo` are never versioned or published).
 2. **On merge to `master`**, the release workflow opens (or updates) a
    "Version Packages" PR that applies the pending changesets, bumps the
    versions, and updates each package's `CHANGELOG.md`.
-3. **Merging the "Version Packages" PR** publishes to npm (`changeset publish`,
-   public access, with provenance).
+3. **Merging the "Version Packages" PR** publishes to npm (public access, with
+   provenance).
+
+The workflow uses the `changesets/action` v2 sub-actions (paired with
+`@changesets/cli` v3), one job each: `select-mode` decides `version` (pending
+changesets) / `publish` (unpublished versions) / `none`; `version` opens the
+PR; `pack` builds and packs tarballs (`changeset pack`); `publish` publishes
+those tarballs. Permissions are per job; only `publish` gets `id-token: write`.
 
 Publishing uses **npm trusted publishing (OIDC)** — no `NPM_TOKEN` secret. The
-workflow's `id-token: write` permission lets npm authenticate via OIDC. This
+`publish` job's `id-token: write` permission lets npm authenticate via OIDC. This
 requires a one-time setup on npmjs.com **per package**: configure the package's
 trusted publisher to this repo and the `release.yml` workflow. Provenance is
 generated automatically.
