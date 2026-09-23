@@ -32,11 +32,8 @@ jobs:
 
       # Trusted publishing (OIDC) needs npm >= 11.5.1; the runner's bundled npm
       # may predate it. `changeset publish` shells out to `npm publish`.
-      # Pinned to a major so a new npm release can't silently change the
-      # output Changesets parses (npm 12's `npm info --json` did, breaking
-      # @changesets/cli 2.x). Bump deliberately.
       - name: Ensure npm supports trusted publishing
-        run: npm install -g npm@11
+        run: npm install -g npm@latest
 
       # Opens/updates a "Version Packages" PR, or publishes when it is merged.
       # Publishing authenticates via npm trusted publishing (OIDC) — no token —
