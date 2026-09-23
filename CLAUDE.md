@@ -26,8 +26,13 @@ Per-package docs: the parser's original goal is
 [`packages/incremental-jsx-parser/GOAL.md`](./packages/incremental-jsx-parser/GOAL.md),
 the full design is
 [`packages/incremental-jsx-parser/PLAN.md`](./packages/incremental-jsx-parser/PLAN.md),
-and the public API is its
-[`README.md`](./packages/incremental-jsx-parser/README.md).
+and the public API is documented in its
+[`docs/`](./packages/incremental-jsx-parser/docs).
+
+Each package's `README.md` stays minimal (what it is, highlights, install,
+basic usage, links); detailed documentation lives in the package's `docs/`
+directory. When changing public API or behavior, update the relevant
+`docs/*.md` page.
 
 ## Monorepo conventions
 
