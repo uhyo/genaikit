@@ -1,4 +1,9 @@
-# Generative UI toolchain
+# ingenui: Generative UI Framework
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./assets/ingenui-lockup-dark.svg">
+  <img src="./assets/ingenui-lockup.svg" alt="ingenui logo" width="480">
+</picture>
 
 A pnpm monorepo hosting a toolchain for **Generative UI**: letting an LLM
 stream UI descriptions (JSX) that render as **live React trees** while they
