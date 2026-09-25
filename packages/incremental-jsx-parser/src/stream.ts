@@ -45,8 +45,10 @@ export function pumpStream(source: JsxStreamSource, sink: StreamSink): StreamHan
 
   const done = (async (): Promise<void> => {
     const decoder = new TextDecoder();
-    const decode = (value: Uint8Array | string): string =>
-      typeof value === "string" ? value : decoder.decode(value, { stream: true });
+    const forward = (value: Uint8Array | string): void => {
+      const chunk = typeof value === "string" ? value : decoder.decode(value, { stream: true });
+      if (chunk) sink.write(chunk);
+    };
 
     if (isReadableStream(source)) {
       reader = source.getReader();
@@ -56,8 +58,7 @@ export function pumpStream(source: JsxStreamSource, sink: StreamSink): StreamHan
           // oxlint-disable-next-line no-await-in-loop
           const { done: streamDone, value } = await reader.read();
           if (streamDone || cancelled) break;
-          const chunk = decode(value);
-          if (chunk) sink.write(chunk);
+          forward(value);
         }
       } finally {
         reader.releaseLock();
@@ -65,14 +66,12 @@ export function pumpStream(source: JsxStreamSource, sink: StreamSink): StreamHan
     } else {
       for await (const value of source) {
         if (cancelled) break;
-        const chunk = decode(value);
-        if (chunk) sink.write(chunk);
+        forward(value);
       }
     }
 
     if (cancelled) return;
-    const tail = decoder.decode();
-    if (tail) sink.write(tail);
+    forward(decoder.decode());
     sink.end();
   })();
 

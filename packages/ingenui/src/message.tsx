@@ -26,12 +26,12 @@ import type { JsxStreamSource } from "@ingenui/incremental-jsx-parser/core";
 import { pumpStream } from "@ingenui/incremental-jsx-parser/core";
 
 import type { ActionEvent, ActionsDefinition } from "./actions";
-import { createActionsVariable } from "./actions";
+import { withActionsVariable } from "./actions";
 import { UiBlockErrorBoundary } from "./boundary";
 import type { PushChannel } from "./channel";
 import { createPushChannel } from "./channel";
 import type { GenUiIssue } from "./issues";
-import { formatIssueReport } from "./issues";
+import { describeError, formatIssueReport } from "./issues";
 import { renderMarkdown as renderMarkdownDefault } from "./markdown";
 import { createFenceSplitter } from "./splitter";
 
@@ -94,16 +94,11 @@ export interface GenUiMessageOptions extends Omit<
   renderUiError?: (blockIndex: number) => ReactNode;
 }
 
-/** A React-friendly store for one streamed message, plus its feedback surface. */
-export interface GenUiMessage {
-  /** Current React snapshot (stable reference until the content changes). */
-  getSnapshot(): ReactNode;
-  /** SSR-safe snapshot. */
-  getServerSnapshot(): ReactNode;
-  /** Subscribe to updates; returns an unsubscribe function. */
-  subscribe(listener: () => void): () => void;
-  /** Cancel the stream and detach. */
-  dispose(): void;
+/**
+ * A React-friendly store for one streamed message (the same shape as the
+ * parser's store), plus its feedback surface.
+ */
+export interface GenUiMessage extends IncrementalJsxParser {
   /** Resolves when the stream (and every UI block) completes; rejects on a fatal stream error. */
   readonly done: Promise<void>;
   /** The issues collected so far (a snapshot copy). */
@@ -151,31 +146,13 @@ export function createGenUiMessage(
   options: GenUiMessageOptions = {},
 ): GenUiMessage {
   const {
-    actions,
-    dynamicActions,
-    onAction,
     onIssue,
     onStreamError,
-    renderMarkdown,
+    renderMarkdown = renderMarkdownDefault,
     renderUiError,
-    variables: baseVariables,
-    variableTypes: baseVariableTypes,
-    ...parserOptions
+    ...rest
   } = options;
-  const md = renderMarkdown ?? renderMarkdownDefault;
-
-  // Wire the `actions` convention into the predefined variables. Dynamic
-  // (model-defined) actions are the default, so the `actions` variable always
-  // exists unless the host opts out without declaring any.
-  const dynamic = dynamicActions !== false;
-  const actionsVariable =
-    actions || dynamic ? createActionsVariable(actions ?? {}, onAction, dynamic) : undefined;
-  const variables = actionsVariable
-    ? { ...baseVariables, actions: actionsVariable.values }
-    : baseVariables;
-  const variableTypes = actionsVariable
-    ? { ...baseVariableTypes, actions: actionsVariable.type }
-    : baseVariableTypes;
+  const parserOptions: IncrementalJsxParserOptions = withActionsVariable(rest);
 
   const listeners = new Set<() => void>();
   let version = 0;
@@ -191,7 +168,6 @@ export function createGenUiMessage(
   };
 
   const segments: Segment[] = [];
-  const blockDones: Promise<void>[] = [];
   let currentMarkdown: MarkdownSegment | null = null;
   let currentUi: UiSegment | null = null;
   let uiCount = 0;
@@ -217,8 +193,6 @@ export function createGenUiMessage(
       const channel = createPushChannel();
       const parser = createIncrementalJsxParser(channel.source, {
         ...parserOptions,
-        ...(variables !== undefined && { variables }),
-        ...(variableTypes !== undefined && { variableTypes }),
         onJsxError: (event) => recordIssue({ kind: "jsx-error", blockIndex, event }),
       });
       const segment: UiSegment = { kind: "ui", blockIndex, parser, channel, version: 0 };
@@ -226,7 +200,6 @@ export function createGenUiMessage(
         segment.version++;
         bump();
       });
-      blockDones.push(parser.done);
       segments.push(segment);
       currentUi = segment;
     },
@@ -243,14 +216,9 @@ export function createGenUiMessage(
     },
   });
 
-  const closeOpenChannels = (): void => {
-    for (const segment of segments) {
-      if (segment.kind === "ui" && !segment.channel.closed) segment.channel.close();
-    }
-  };
-
+  // Report each distinct crash once, not on every retry.
   const reportRenderError = (segment: UiSegment, error: unknown): void => {
-    const described = error instanceof Error ? error.message : String(error);
+    const described = describeError(error);
     if (segment.lastRenderError === described) return;
     segment.lastRenderError = described;
     recordIssue({ kind: "render-error", blockIndex: segment.blockIndex, error });
@@ -276,7 +244,7 @@ export function createGenUiMessage(
           segment.cachedStreaming = segmentStreaming;
           segment.cachedNode = (
             <Fragment key={`md-${segment.id}`}>
-              {md(text, { streaming: segmentStreaming })}
+              {renderMarkdown(text, { streaming: segmentStreaming })}
             </Fragment>
           );
         }
@@ -295,9 +263,7 @@ export function createGenUiMessage(
       }
     }
 
-    // While streaming with the frontier in Markdown, show the Pending
-    // placeholder at the end (inside a UI block, the block's own parser
-    // renders it).
+    // Inside a UI block, the block's own parser renders the frontier.
     const PendingComponent = parserOptions.Pending;
     if (streaming && currentMarkdown !== null && PendingComponent) {
       children.push(<PendingComponent key="pending" />);
@@ -321,15 +287,14 @@ export function createGenUiMessage(
 
   const done = handle.done.then(
     async () => {
-      // The blocks' own pumps drain asynchronously; the message is done when
-      // every block is.
-      await Promise.all(blockDones);
+      // The blocks' own pumps drain asynchronously.
+      await Promise.all(segments.flatMap((s) => (s.kind === "ui" ? [s.parser.done] : [])));
     },
     (error: unknown) => {
-      // Finalize open blocks best-effort so their parsers settle; the
+      // Finalize the open block best-effort so its parser settles; the
       // received content stays rendered.
       streaming = false;
-      closeOpenChannels();
+      currentUi?.channel.close();
       onStreamError?.(error);
       bump();
       throw error;
@@ -345,7 +310,7 @@ export function createGenUiMessage(
     },
     dispose() {
       handle.cancel();
-      closeOpenChannels();
+      currentUi?.channel.close();
       for (const segment of segments) {
         if (segment.kind === "ui") segment.parser.dispose();
       }

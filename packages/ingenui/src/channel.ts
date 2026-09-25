@@ -13,8 +13,6 @@ export interface PushChannel {
   push(chunk: string): void;
   /** Signal end of input. Idempotent. */
   close(): void;
-  /** Whether {@link close} has been called. */
-  readonly closed: boolean;
 }
 
 export function createPushChannel(): PushChannel {
@@ -29,7 +27,6 @@ export function createPushChannel(): PushChannel {
           for (;;) {
             if (buffer.length > 0) return { done: false, value: buffer.shift()! };
             if (closed) return { done: true, value: undefined };
-            // Wait until the producer pushes or closes.
             // oxlint-disable-next-line no-await-in-loop
             await new Promise<void>((resolve) => {
               wake = resolve;
@@ -52,9 +49,6 @@ export function createPushChannel(): PushChannel {
       closed = true;
       wake?.();
       wake = undefined;
-    },
-    get closed() {
-      return closed;
     },
   };
 }

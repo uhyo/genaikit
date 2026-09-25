@@ -2,15 +2,10 @@
  * React adapter (PLAN.md §4.5): converts the renderer-independent AST snapshot
  * into a `React.ReactNode`.
  *
- *  - intrinsic tag (lowercase) -> string type; component tag (Capitalized) ->
- *    resolved through `components` / `resolveComponent`, else handled per
- *    `onUnknownComponent`; fragment -> `React.Fragment`.
- *  - a variable reference -> resolved through `variables` (null-safe dot walk).
- *  - the frontier {@link PendingNode} -> the `Pending` component.
- *  - **Memoization**: every *closed* (frozen) node caches its created React
- *    element keyed by node identity, so between snapshots only the open path and
- *    the single Pending are rebuilt. Combined with stable `key`s (the node `id`)
- *    React reconciles instead of remounting as the stream grows.
+ * Every *closed* (frozen) node caches its created React element keyed by node
+ * identity, so between snapshots only the open path and the single Pending are
+ * rebuilt. Combined with stable `key`s (the node `id`), React reconciles
+ * instead of remounting as the stream grows.
  *
  * This module depends on React; the `/core` entry never imports it.
  */
@@ -18,9 +13,9 @@
 import { createElement, Fragment } from "react";
 import type { ComponentType, ReactNode } from "react";
 
-import { isComponentName, resolveVariablePath, UNSUPPORTED_EXPRESSION } from "./core";
-import type { ElementNode, Node, VariableNode } from "./core";
-import { checkProp, isElementAllowed } from "./schema";
+import { isComponentName, resolveVariablePath, UNSUPPORTED_EXPRESSION } from "./ast";
+import type { ElementNode, Node } from "./ast";
+import { checkProp, isComponentSpec, isElementAllowed } from "./schema";
 import type { ElementAllowlist, PropsDefinition, SchemaType } from "./schema";
 
 /**
@@ -63,35 +58,68 @@ export interface ComponentSpec {
 export function resolveComponentEntry(
   entry: ComponentEntry | undefined,
 ): ComponentType<never> | undefined {
-  // Same spec detection as the schema side (`componentPropsDefinition`), so a
-  // props-only entry counts as a spec without a component, not as a component.
-  if (entry != null && typeof entry === "object" && ("component" in entry || "props" in entry)) {
-    return (entry as ComponentSpec).component;
-  }
-  // A bare component: a function, a class, or a memo/forwardRef exotic.
-  return entry as ComponentType<never> | undefined;
+  return isComponentSpec(entry) ? (entry as ComponentSpec).component : entry;
 }
 
 export interface RenderOptions {
   /**
-   * Tag name -> React component (or a {@link ComponentSpec} declaring its
-   * props), for Capitalized JSX names.
+   * Tag name -> React component map for capitalized JSX names — the
+   * **component catalog**. An entry is either the component itself, or a
+   * `{ component, props }` spec that also declares the props the component
+   * accepts: prop names (`["title"]`), or prop name -> `SchemaType`
+   * (`{ title: "string", onAction: "function" }`). With a declaration, every
+   * prop parsed on that component is validated against it — an unknown prop
+   * or a value failing its declared type is reported (`kind: "invalid-prop"`)
+   * and dropped. Without one, props are the component author's contract.
    */
   components?: Record<string, ComponentEntry> | undefined;
-  /** Variable name -> value, for `{name}` / `{name.member}` expressions. */
+  /**
+   * Variable name -> value, for `{name}` / `{name.member}` expressions
+   * (dot notation only). Like `components`, this is the allowlist: every
+   * segment of a reference is validated against these values at parse time,
+   * so a path that would not resolve (unknown root name, or a member missing
+   * at any depth) renders as nothing and is reported
+   * (`kind: "unknown-variable"`). The values also give variable references
+   * their inferred `SchemaType` for prop type checking.
+   */
   variables?: Record<string, unknown> | undefined;
-  /** Declared variable types, refining (or standing in for) the values. */
+  /**
+   * Variable name -> declared `SchemaType`. Optional refinement of
+   * `variables`: a declared type (an object shape is walked along dot paths)
+   * takes precedence over the type inferred from the value, and a variable
+   * declared here counts as known even without a value. Useful when a value
+   * alone under-describes the type (or is not representative).
+   */
   variableTypes?: Readonly<Record<string, SchemaType>> | undefined;
-  /** Placeholder rendered at the frontier (default: {@link Pending}). */
+  /** Placeholder rendered at the streaming frontier (default: renders null). */
   Pending?: ComponentType<unknown> | undefined;
   /** Optional resolver, consulted before the `components` map. */
   resolveComponent?: ((name: string) => ComponentType<never> | undefined) | undefined;
-  /** Rendering of an unresolved component tag (default: "pending"). */
+  /** Behavior for an unresolved component tag (default: "pending"). */
   onUnknownComponent?: UnknownComponentBehavior | undefined;
-  /** Allowlist of intrinsic tags; absent = every intrinsic tag renders. */
+  /**
+   * Allowlist of intrinsic (lowercase) HTML elements — the schema counterpart
+   * of `components`. A list of tag names, or a record mapping each allowed
+   * tag to `true` (any prop), to its allowed prop names, or to prop name ->
+   * `SchemaType` (`{ div: true, a: { href: "url", title: "string" } }`).
+   * Absent = every intrinsic tag renders. Whether or not it is set, the
+   * built-in host prop rules always apply (see `checkProp`): string `style`
+   * values, `dangerouslySetInnerHTML` &c., non-function `on*` handlers, and
+   * `javascript:` URLs are dropped and reported (`kind: "invalid-prop"`).
+   * `formatPromptContract` serializes the whole schema into a system-prompt
+   * spec for the generating model.
+   */
   elements?: ElementAllowlist | undefined;
-  /** Rendering of a disallowed intrinsic tag (default: "skip"). */
+  /** Behavior for a disallowed intrinsic tag (default: "skip"). */
   onDisallowedElement?: DisallowedElementBehavior | undefined;
+}
+
+/** The component a component-like tag resolves to, if any. */
+export function resolveComponent(
+  options: RenderOptions,
+  tag: string,
+): ComponentType<never> | undefined {
+  return options.resolveComponent?.(tag) ?? resolveComponentEntry(options.components?.[tag]);
 }
 
 /** Default frontier placeholder: an invisible node. */
@@ -111,11 +139,10 @@ export interface Renderer {
 }
 
 export function createRenderer(options: RenderOptions = {}): Renderer {
-  // Closed nodes are frozen and reused by reference, so their rendered output is
-  // stable; cache it weakly so settled subtrees are never rebuilt.
   const cache = new WeakMap<Node, ReactNode>();
   const PendingComponent = options.Pending ?? Pending;
-  const behavior = options.onUnknownComponent ?? "pending";
+  const unknownComponent = options.onUnknownComponent ?? "pending";
+  const disallowedElement = options.onDisallowedElement ?? "skip";
 
   function render(nodes: readonly Node[]): ReactNode {
     return nodes.map(renderNode);
@@ -142,12 +169,15 @@ export function createRenderer(options: RenderOptions = {}): Renderer {
         return createElement(Fragment, { key: node.id }, ...node.children.map(renderNode));
       case "element":
         return createElementNode(node);
-      case "variable":
-        return resolveVariable(node) as ReactNode;
+      case "variable": {
+        // An unresolvable path was reported at parse time ("unknown-variable").
+        const result = options.variables && resolveVariablePath(options.variables, node.path);
+        return result?.found ? (result.value as ReactNode) : undefined;
+      }
       case "expression": {
         const value = renderValue(node.value);
-        // A nested JSX value is re-keyed via a wrapper so the parent array key is
-        // this expression's (unique) id, not the nested node's local id.
+        // Re-key nested JSX so the parent array key is this expression's
+        // (unique) id, not the nested node's local id.
         return isNode(node.value) ? createElement(Fragment, { key: node.id }, value) : value;
       }
     }
@@ -160,8 +190,8 @@ export function createRenderer(options: RenderOptions = {}): Renderer {
 
     const props: Record<string, unknown> = { key: node.id };
     for (const [name, value] of Object.entries(node.props)) {
-      // A schema-rejected prop is dropped (already reported at parse time via
-      // "invalid-prop"); left in, React would throw on e.g. string styles.
+      // Drop schema-rejected props (reported at parse time as "invalid-prop");
+      // left in, React would throw on e.g. string styles.
       if (checkProp(node.tag, name, value, options) !== null) continue;
       props[name] = renderValue(value);
     }
@@ -171,55 +201,20 @@ export function createRenderer(options: RenderOptions = {}): Renderer {
       : createElement(resolved.type as ComponentType<Record<string, unknown>>, props, ...children);
   }
 
-  /** Resolve a prop value or expression value to a React-renderable value. */
   function renderValue(value: unknown): ReactNode {
-    if (value === UNSUPPORTED_EXPRESSION) {
-      // Already reported at parse time (onJsxError "unsupported-expression").
-      return null;
-    }
-    if (isNode(value)) {
-      // A nested JSX element/fragment used as a value.
-      return renderNode(value);
-    }
+    if (value === UNSUPPORTED_EXPRESSION) return null;
+    if (isNode(value)) return renderNode(value);
     return value as ReactNode;
-  }
-
-  /**
-   * Walk a variable reference's dot path through the `variables` map. An
-   * unresolvable path (already reported at parse time via "unknown-variable")
-   * renders as `undefined` — same lookup semantics as the parse-time check.
-   */
-  function resolveVariable(node: VariableNode): unknown {
-    const variables = options.variables;
-    if (!variables) return undefined;
-    const result = resolveVariablePath(variables, node.path);
-    return result.found ? result.value : undefined;
   }
 
   function resolveType(tag: string): Resolved {
     if (!isComponentName(tag)) {
-      if (!isElementAllowed(options.elements, tag)) {
-        // Already reported at parse time (onJsxError "disallowed-element").
-        return (options.onDisallowedElement ?? "skip") === "pending"
-          ? { kind: "pending" }
-          : { kind: "skip" };
-      }
-      return { kind: "host", tag };
+      if (isElementAllowed(options.elements, tag)) return { kind: "host", tag };
+      return { kind: disallowedElement };
     }
-    const resolved =
-      options.resolveComponent?.(tag) ?? resolveComponentEntry(options.components?.[tag]);
-    if (resolved) {
-      return { kind: "component", type: resolved };
-    }
-    switch (behavior) {
-      case "passthrough":
-        return { kind: "host", tag };
-      case "skip":
-        // Already reported at parse time (onJsxError "unknown-component").
-        return { kind: "skip" };
-      case "pending":
-        return { kind: "pending" };
-    }
+    const component = resolveComponent(options, tag);
+    if (component) return { kind: "component", type: component };
+    return unknownComponent === "passthrough" ? { kind: "host", tag } : { kind: unknownComponent };
   }
 
   return { render };

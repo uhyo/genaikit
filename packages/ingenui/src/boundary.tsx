@@ -15,7 +15,7 @@
  */
 
 import { Component } from "react";
-import type { ErrorInfo, ReactNode } from "react";
+import type { ReactNode } from "react";
 
 export interface UiBlockErrorBoundaryProps {
   /** Bump to clear a caught error and re-attempt rendering the children. */
@@ -56,7 +56,7 @@ export class UiBlockErrorBoundary extends Component<
     return null;
   }
 
-  override componentDidCatch(error: unknown, _info: ErrorInfo): void {
+  override componentDidCatch(error: unknown): void {
     this.props.onError?.(error);
   }
 
