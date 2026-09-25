@@ -34,6 +34,8 @@
  * opener, per CommonMark.
  */
 
+import { FENCE_OPEN, isFenceClose } from "./fence";
+
 export interface FenceSplitterHandlers {
   /** Committed markdown text — append-only within the current markdown region. */
   markdown(text: string): void;
@@ -63,52 +65,46 @@ export interface FenceSplitter {
 const UI_INFO = "ui+jsx";
 /** Opening fence for a UI block: up to 3 spaces, 3+ backticks, `ui+jsx`. */
 const UI_OPEN = /^ {0,3}(`{3,})[ \t]*ui\+jsx[ \t]*$/;
-/** Any backtick code fence opener (CommonMark: info must not contain `` ` ``). */
-const FENCE_OPEN = /^ {0,3}(`{3,})([^`]*)$/;
-/** Closing fence: up to 3 spaces, backticks, trailing blanks only. */
-const FENCE_CLOSE = /^ {0,3}(`{3,})[ \t]*$/;
-
-/** Could `line` (a partial line) still grow into a `ui+jsx` fence opener? */
-function isUiOpenPrefix(line: string): boolean {
-  let i = 0;
-  while (i < line.length && line[i] === " ") i++;
-  if (i > 3) return false;
-  if (i === line.length) return true; // spaces only so far
-  const backtickStart = i;
-  while (i < line.length && line[i] === "`") i++;
-  const backticks = i - backtickStart;
-  if (backticks === 0) return false; // first real character is not a backtick
-  if (i === line.length) return true; // backtick run may still grow
-  if (backticks < 3) return false; // run ended before three backticks
-  while (i < line.length && (line[i] === " " || line[i] === "\t")) i++;
-  const rest = line.slice(i);
-  if (UI_INFO.startsWith(rest)) return true; // partial (or empty) info string
-  if (!rest.startsWith(UI_INFO)) return false;
-  return /^[ \t]*$/.test(rest.slice(UI_INFO.length));
-}
 
 /**
- * Could `line` (a partial line) still grow into a closing fence of at least
- * `size` backticks?
+ * Could the partial `line` still grow into a fence line — up to 3 spaces, a
+ * run of at least `minSize` backticks, blanks, then a remainder accepted by
+ * `isRestPrefix`?
  */
-function isFenceClosePrefix(line: string, size: number): boolean {
+function isFencePrefix(
+  line: string,
+  minSize: number,
+  isRestPrefix: (rest: string) => boolean,
+): boolean {
   let i = 0;
   while (i < line.length && line[i] === " ") i++;
   if (i > 3) return false;
-  if (i === line.length) return true;
   const backtickStart = i;
   while (i < line.length && line[i] === "`") i++;
-  const backticks = i - backtickStart;
-  if (backticks === 0) return false;
-  if (i === line.length) return true; // run may still grow
-  if (backticks < size) return false; // run ended too short
+  // Spaces and backticks only so far: the run may still grow.
+  if (i === line.length) return true;
+  if (i - backtickStart < minSize) return false;
   while (i < line.length && (line[i] === " " || line[i] === "\t")) i++;
-  return i === line.length;
+  return isRestPrefix(line.slice(i));
+}
+
+function isUiOpenPrefix(line: string): boolean {
+  return isFencePrefix(
+    line,
+    3,
+    (rest) =>
+      UI_INFO.startsWith(rest) ||
+      (rest.startsWith(UI_INFO) && /^[ \t]*$/.test(rest.slice(UI_INFO.length))),
+  );
+}
+
+function isFenceClosePrefix(line: string, size: number): boolean {
+  return isFencePrefix(line, size, (rest) => rest === "");
 }
 
 type Mode =
   | { kind: "markdown" }
-  // Inside a regular fenced code block within the markdown.
+  /** Inside a regular fenced code block within the markdown. */
   | { kind: "markdown-fence"; size: number }
   | { kind: "ui"; size: number };
 
@@ -121,9 +117,7 @@ export function createFenceSplitter(handlers: FenceSplitterHandlers): FenceSplit
   let lastTail = "";
   let ended = false;
 
-  const emitTail = (): void => {
-    const tail =
-      mode.kind === "ui" || (mode.kind === "markdown" && isUiOpenPrefix(line)) ? "" : line;
+  const setTail = (tail: string): void => {
     if (tail !== lastTail) {
       lastTail = tail;
       handlers.markdownTail(tail);
@@ -161,9 +155,8 @@ export function createFenceSplitter(handlers: FenceSplitterHandlers): FenceSplit
     const nl = eof ? "" : "\n";
 
     if (mode.kind === "ui") {
-      // A line that was flushed early can no longer be a closing fence.
-      const close = flushed ? null : FENCE_CLOSE.exec(full);
-      if (close && close[1]!.length >= mode.size) {
+      // A line flushed early can no longer be a closing fence.
+      if (!flushed && isFenceClose(full, mode.size)) {
         mode = { kind: "markdown" };
         handlers.closeUi(true);
         return;
@@ -173,8 +166,7 @@ export function createFenceSplitter(handlers: FenceSplitterHandlers): FenceSplit
     }
 
     if (mode.kind === "markdown-fence") {
-      const close = FENCE_CLOSE.exec(full);
-      if (close && close[1]!.length >= mode.size) mode = { kind: "markdown" };
+      if (isFenceClose(full, mode.size)) mode = { kind: "markdown" };
       handlers.markdown(full + nl);
       return;
     }
@@ -182,10 +174,7 @@ export function createFenceSplitter(handlers: FenceSplitterHandlers): FenceSplit
     const uiOpen = UI_OPEN.exec(full);
     if (uiOpen) {
       mode = { kind: "ui", size: uiOpen[1]!.length };
-      if (lastTail !== "") {
-        lastTail = "";
-        handlers.markdownTail("");
-      }
+      setTail("");
       handlers.openUi();
       return;
     }
@@ -208,16 +197,13 @@ export function createFenceSplitter(handlers: FenceSplitterHandlers): FenceSplit
         completeLine(false);
         rest = rest.slice(nl + 1);
       }
-      emitTail();
+      setTail(mode.kind === "ui" || (mode.kind === "markdown" && isUiOpenPrefix(line)) ? "" : line);
     },
     end() {
       if (ended) return;
       ended = true;
       if (line !== "" || lineFlushed) completeLine(true);
-      if (lastTail !== "") {
-        lastTail = "";
-        handlers.markdownTail("");
-      }
+      setTail("");
       if (mode.kind === "ui") {
         mode = { kind: "markdown" };
         handlers.closeUi(false);

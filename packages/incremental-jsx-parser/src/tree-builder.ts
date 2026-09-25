@@ -12,23 +12,13 @@
  * open node, cloning only the open path so closed subtrees keep their identity.
  */
 
-import type {
-  ElementNode,
-  ExpressionNode,
-  FragmentNode,
-  JsxErrorListener,
-  Node,
-  PendingNode,
-  PropValue,
-  TextNode,
-  VariableNode,
-} from "./core";
-import { UNSUPPORTED_EXPRESSION } from "./core";
+import type { ElementNode, FragmentNode, Node, PendingNode, PropValue, VariableNode } from "./ast";
+import { isComponentName, UNSUPPORTED_EXPRESSION } from "./ast";
+import type { JsxErrorListener } from "./errors";
 import { parseExpression, type ParsedExpression } from "./expression";
 import type { AttrValue, Pending, SourceLocation, Token } from "./tokenizer";
 import { Tokenizer } from "./tokenizer";
 
-/** A node that can still receive children (sits on the open stack). */
 type OpenNode = ElementNode | FragmentNode;
 
 /**
@@ -38,64 +28,55 @@ type OpenNode = ElementNode | FragmentNode;
  */
 export type MismatchBehavior = "autoclose" | "ignore";
 
-/** Whether a tag name resolves as a component (Capitalized or `Foo.Bar`). */
-export function isComponentName(tag: string): boolean {
-  const first = tag.charCodeAt(0);
-  return (first >= 65 && first <= 90) || tag.includes(".");
-}
-
+/**
+ * The probes below are only consulted when `onJsxError` is set; none of them
+ * affects recovery or rendering.
+ */
 export interface TreeBuilderOptions {
   /** Closing-tag mismatch recovery strategy (default: "autoclose"). */
   mismatchedTag?: MismatchBehavior | undefined;
   /**
    * The unified structured error channel: called synchronously, at parse time,
    * for every JSX-level error — whatever recovery mode is configured.
-   * Reporting is decoupled from recovery: the tree is still repaired
-   * tolerantly.
    */
   onJsxError?: JsxErrorListener | undefined;
   /**
-   * Optional resolver check: when provided, opening a component-like tag
-   * (see {@link isComponentName}) it does not recognize emits an
-   * `"unknown-component"` event. Recovery/rendering is unaffected.
+   * Opening a component-like tag (see `isComponentName`) this rejects emits
+   * an `"unknown-component"` event.
    */
   isKnownComponent?: ((tag: string) => boolean) | undefined;
   /**
-   * Optional resolver check: when provided, a variable reference expression
-   * (`{foo}` / `{foo.bar}`) it rejects emits an `"unknown-variable"` event.
-   * It receives the full dot path, so it may validate at any depth — root
-   * name only (`path[0]`), or every segment (see `resolveVariablePath`).
-   * Recovery/rendering is unaffected.
+   * A variable reference whose dot path this rejects emits an
+   * `"unknown-variable"` event. It receives the full path, so it may validate
+   * the root name only or every segment (see `resolveVariablePath`).
    */
   isKnownVariable?: ((path: readonly string[]) => boolean) | undefined;
   /**
-   * Optional allowlist check: when provided, opening an intrinsic
-   * (non-component) tag it rejects emits a `"disallowed-element"` event.
-   * Recovery/rendering is unaffected (see `isElementAllowed`).
+   * Opening an intrinsic (non-component) tag this rejects emits a
+   * `"disallowed-element"` event (see `isElementAllowed`).
    */
   isAllowedElement?: ((tag: string) => boolean) | undefined;
   /**
-   * Optional prop check, probed for every prop when the opening tag
-   * completes: a non-`null` return is the human-readable rejection reason and
-   * emits an `"invalid-prop"` event. Recovery/rendering is unaffected — the
-   * renderer applies the same check to drop the prop (see `checkProp` in
-   * `schema.ts`).
+   * Probed for every prop when an opening tag completes: a non-`null` return
+   * is the rejection reason and emits an `"invalid-prop"` event (see
+   * `checkProp`, which the renderer applies to drop the prop).
    */
   checkProp?: ((tag: string, prop: string, value: PropValue) => string | null) | undefined;
 }
 
-/** The single frontier marker has a fixed key (only ever one exists at a time). */
+/** Only one frontier marker exists at a time, so its key is fixed. */
 const PENDING_ID = -1;
+/** Wraps multiple top-level nodes of nested JSX; ids there are local anyway. */
+const NESTED_FRAGMENT_ID = -2;
 
-/** An opening tag being assembled between `openTagStart` and `openTagEnd`. */
+/** An opening tag being assembled between `openTagStart` and its `>`. */
 interface Building {
   name: string;
   props: Record<string, PropValue>;
-  /** Where the opening tag starts, for error events about this element. */
   loc: SourceLocation;
 }
 
-/** An entry on the open stack: the node plus its opening-tag location. */
+/** An open node plus its opening-tag location (for error events). */
 interface OpenEntry {
   node: OpenNode;
   loc: SourceLocation;
@@ -103,26 +84,23 @@ interface OpenEntry {
 
 export class TreeBuilder {
   private readonly options: TreeBuilderOptions;
+  private readonly onJsxError: JsxErrorListener | undefined;
   private readonly mismatchedTag: MismatchBehavior;
 
-  constructor(options: TreeBuilderOptions = {}) {
-    this.options = options;
-    this.mismatchedTag = options.mismatchedTag ?? "autoclose";
-  }
-
   private nextId = 0;
-  /** Committed top-level nodes (append-only; the open path is mutated in place). */
+  /** Committed top-level nodes (the open path is mutated in place). */
   private readonly roots: Node[] = [];
-  /** Currently open nodes, outermost first; the last is the frontier's parent. */
+  /** Outermost first; the last is the frontier's parent. */
   private readonly openStack: OpenEntry[] = [];
-  /** The opening tag currently being assembled, if any. */
   private building: Building | null = null;
-  /** Stable id reserved for the in-progress text run (shared with its commit). */
+  /** Id reserved for the in-progress text run, kept when it commits. */
   private currentTextId: number | null = null;
   private ended = false;
 
-  private get onJsxError(): JsxErrorListener | undefined {
-    return this.options.onJsxError;
+  constructor(options: TreeBuilderOptions = {}) {
+    this.options = options;
+    this.onJsxError = options.onJsxError;
+    this.mismatchedTag = options.mismatchedTag ?? "autoclose";
   }
 
   /** Apply one completed token to the committed tree. */
@@ -139,25 +117,19 @@ export class TreeBuilder {
         return;
       }
       case "openTagEnd": {
-        this.refreshBuildingLine(token.loc);
-        const loc = this.building?.loc;
-        const node = this.createOpenNode();
-        if (node && loc) {
-          this.appendChild(node);
-          this.openStack.push({ node, loc });
+        const entry = this.completeOpeningTag(token.loc);
+        if (entry) {
+          this.appendChild(entry.node);
+          this.openStack.push(entry);
         }
-        this.building = null;
         return;
       }
       case "selfClose": {
-        this.refreshBuildingLine(token.loc);
-        const node = this.createOpenNode();
-        if (node) {
-          node.status = "closed";
-          this.appendChild(node);
-          freeze(node);
+        const entry = this.completeOpeningTag(token.loc);
+        if (entry) {
+          entry.node.status = "closed";
+          this.appendChild(freeze(entry.node));
         }
-        this.building = null;
         return;
       }
       case "closeTag": {
@@ -167,118 +139,15 @@ export class TreeBuilder {
       case "text": {
         const id = this.currentTextId ?? this.nextId++;
         this.currentTextId = null;
-        const node: TextNode = { kind: "text", id, value: token.value };
-        this.appendChild(freeze(node));
+        this.appendChild(freeze({ kind: "text", id, value: token.value }));
         return;
       }
       case "expr": {
         const value = this.parseExpr(token.raw, token.loc);
-        const node: ExpressionNode = { kind: "expression", id: this.nextId++, value };
-        this.appendChild(freeze(node));
+        this.appendChild(freeze({ kind: "expression", id: this.nextId++, value }));
         return;
       }
     }
-  }
-
-  /**
-   * When the `>` / `/>` ends the tag on the same line it started, the line has
-   * streamed further since `openTagStart` was captured — adopt the fuller line
-   * text so error frames about this element show the whole opening tag.
-   */
-  private refreshBuildingLine(end: SourceLocation): void {
-    const building = this.building;
-    if (
-      building &&
-      end.line === building.loc.line &&
-      end.lineText.length > building.loc.lineText.length
-    ) {
-      building.loc = { ...building.loc, lineText: end.lineText };
-    }
-  }
-
-  private attrToProp(name: string, value: AttrValue): PropValue {
-    switch (value.type) {
-      case "string":
-        return value.value;
-      case "boolean":
-        return true;
-      case "expression":
-        // The sentinel for an unsupported expression is detected by the adapter.
-        return this.parseExpr(value.raw, value.loc, name) as PropValue;
-    }
-  }
-
-  /** Parse a `{ }` expression, reporting an unsupported one as it is detected. */
-  private parseExpr(raw: string, loc: SourceLocation, attribute?: string): ParsedExpression {
-    const value = parseExpression(
-      raw,
-      (src) => this.parseJsx(src, loc),
-      (path) => this.createVariable(path, loc),
-    );
-    if (value === UNSUPPORTED_EXPRESSION && this.onJsxError) {
-      this.onJsxError(
-        attribute === undefined
-          ? {
-              kind: "unsupported-expression",
-              message: `Unsupported expression: {${raw}}`,
-              expression: raw,
-              location: loc,
-            }
-          : {
-              kind: "unsupported-expression",
-              message: `Unsupported expression in attribute "${attribute}": {${raw}}`,
-              expression: raw,
-              attribute,
-              location: loc,
-            },
-      );
-    }
-    return value;
-  }
-
-  /** Materialize a variable reference node, reporting a rejected path. */
-  private createVariable(rawPath: readonly string[], loc: SourceLocation): VariableNode {
-    const path = Object.freeze(rawPath);
-    const { isKnownVariable } = this.options;
-    if (this.onJsxError && isKnownVariable && !isKnownVariable(path)) {
-      this.onJsxError({
-        kind: "unknown-variable",
-        message: `Unknown variable reference {${path.join(".")}}`,
-        name: path[0]!,
-        path,
-        location: loc,
-      });
-    }
-    const node: VariableNode = { kind: "variable", id: this.nextId++, path };
-    return freeze(node);
-  }
-
-  /** Parse a nested JSX expression by running a fresh, self-contained parse. */
-  private parseJsx(src: string, loc: SourceLocation): Node | undefined {
-    const tokenizer = new Tokenizer();
-    const onJsxError = this.onJsxError;
-    // Nested JSX keeps the default recovery (unchanged behavior), but its
-    // errors still surface through the unified event channel. Positions inside
-    // the buffered expression are relative to its own source, so nested events
-    // are reported at the enclosing `{` in the outer stream instead.
-    const builder = new TreeBuilder({
-      ...this.options,
-      mismatchedTag: undefined,
-      onJsxError: onJsxError && ((event) => onJsxError({ ...event, location: loc })),
-    });
-    for (const token of tokenizer.write(src)) builder.push(token);
-    for (const token of tokenizer.end()) builder.push(token);
-    builder.end();
-    const nodes = builder.snapshot({ type: "none" });
-    if (nodes.length === 0) return undefined;
-    if (nodes.length === 1) return nodes[0];
-    const fragment: FragmentNode = {
-      kind: "fragment",
-      id: -2,
-      children: [...nodes],
-      status: "closed",
-    };
-    return freeze(fragment);
   }
 
   /**
@@ -308,32 +177,126 @@ export class TreeBuilder {
   /**
    * The live tree: committed nodes plus the frontier (partial text + a single
    * {@link PendingNode}) while the stream is open. After {@link end} the
-   * frontier is gone and the committed roots are returned directly.
+   * committed roots are returned directly.
    */
   snapshot(pending: Pending): readonly Node[] {
     if (this.ended) return this.roots;
 
-    const extras: Node[] = [];
+    const frontier: Node[] = [];
     if (pending.type === "text") {
       this.currentTextId ??= this.nextId++;
-      const textNode: TextNode = { kind: "text", id: this.currentTextId, value: pending.value };
-      extras.push(textNode);
+      frontier.push({ kind: "text", id: this.currentTextId, value: pending.value });
     }
     const pendingNode: PendingNode = { kind: "pending", id: PENDING_ID };
-    extras.push(pendingNode);
+    frontier.push(pendingNode);
 
-    return this.withFrontier(extras);
+    const stack = this.openStack;
+    if (stack.length === 0) return [...this.roots, ...frontier];
+
+    // Clone the open path bottom-up; each parent's last child is the open
+    // node below it, and stack[0] is the last root.
+    const deepest = stack[stack.length - 1]!.node;
+    let child: OpenNode = { ...deepest, children: [...deepest.children, ...frontier] };
+    for (let i = stack.length - 2; i >= 0; i--) {
+      const parent = stack[i]!.node;
+      child = { ...parent, children: [...parent.children.slice(0, -1), child] };
+    }
+    return [...this.roots.slice(0, -1), child];
   }
 
-  private createOpenNode(): OpenNode | null {
+  private attrToProp(name: string, value: AttrValue): PropValue {
+    switch (value.type) {
+      case "string":
+        return value.value;
+      case "boolean":
+        return true;
+      case "expression":
+        // UNSUPPORTED_EXPRESSION is kept as a prop value; the renderer drops it.
+        return this.parseExpr(value.raw, value.loc, name) as PropValue;
+    }
+  }
+
+  /** Parse a `{ }` expression, reporting an unsupported one. */
+  private parseExpr(raw: string, loc: SourceLocation, attribute?: string): ParsedExpression {
+    const value = parseExpression(
+      raw,
+      (src) => this.parseJsx(src, loc),
+      (path) => this.createVariable(path, loc),
+    );
+    if (value === UNSUPPORTED_EXPRESSION) {
+      this.onJsxError?.({
+        kind: "unsupported-expression",
+        message:
+          attribute === undefined
+            ? `Unsupported expression: {${raw}}`
+            : `Unsupported expression in attribute "${attribute}": {${raw}}`,
+        expression: raw,
+        ...(attribute !== undefined && { attribute }),
+        location: loc,
+      });
+    }
+    return value;
+  }
+
+  private createVariable(rawPath: readonly string[], loc: SourceLocation): VariableNode {
+    const path = Object.freeze(rawPath);
+    const { isKnownVariable } = this.options;
+    if (this.onJsxError && isKnownVariable && !isKnownVariable(path)) {
+      this.onJsxError({
+        kind: "unknown-variable",
+        message: `Unknown variable reference {${path.join(".")}}`,
+        name: path[0]!,
+        path,
+        location: loc,
+      });
+    }
+    return freeze({ kind: "variable", id: this.nextId++, path });
+  }
+
+  /** Parse nested JSX from an expression with a fresh, self-contained parse. */
+  private parseJsx(src: string, loc: SourceLocation): Node | undefined {
+    const tokenizer = new Tokenizer();
+    const onJsxError = this.onJsxError;
+    // Positions inside the buffered expression are relative to its own
+    // source, so nested events are reported at the enclosing `{` instead.
+    const builder = new TreeBuilder({
+      ...this.options,
+      mismatchedTag: undefined,
+      onJsxError: onJsxError && ((event) => onJsxError({ ...event, location: loc })),
+    });
+    for (const token of tokenizer.write(src)) builder.push(token);
+    for (const token of tokenizer.end()) builder.push(token);
+    builder.end();
+    const nodes = builder.snapshot({ type: "none" });
+    if (nodes.length <= 1) return nodes[0];
+    return freeze({
+      kind: "fragment",
+      id: NESTED_FRAGMENT_ID,
+      children: [...nodes],
+      status: "closed",
+    });
+  }
+
+  /** Complete the opening tag being assembled; `end` is the location of its `>`. */
+  private completeOpeningTag(end: SourceLocation): OpenEntry | null {
     const building = this.building;
+    this.building = null;
     if (!building) return null;
+
+    // When the tag ends on the line it started, that line has streamed further
+    // since `openTagStart`: adopt the fuller text so error frames show the
+    // whole opening tag.
+    let loc = building.loc;
+    if (end.line === loc.line && end.lineText.length > loc.lineText.length) {
+      loc = { ...loc, lineText: end.lineText };
+    }
+
     const id = this.nextId++;
     if (building.name === "") {
-      return { kind: "fragment", id, children: [], status: "open" };
+      return { node: { kind: "fragment", id, children: [], status: "open" }, loc };
     }
-    if (this.onJsxError) this.validateOpeningTag(building);
-    return {
+    if (this.onJsxError) this.validateOpeningTag(building.name, building.props, loc);
+    const node: ElementNode = {
       kind: "element",
       id,
       tag: building.name,
@@ -341,10 +304,14 @@ export class TreeBuilder {
       children: [],
       status: "open",
     };
+    return { node, loc };
   }
 
-  /** Run the configured resolver/schema probes on a completed opening tag. */
-  private validateOpeningTag({ name, props, loc }: Building): void {
+  private validateOpeningTag(
+    name: string,
+    props: Record<string, PropValue>,
+    loc: SourceLocation,
+  ): void {
     const { isKnownComponent, isAllowedElement, checkProp } = this.options;
     if (isComponentName(name)) {
       if (isKnownComponent && !isKnownComponent(name)) {
@@ -363,19 +330,18 @@ export class TreeBuilder {
         location: loc,
       });
     }
-    if (checkProp) {
-      for (const [prop, value] of Object.entries(props)) {
-        const reason = checkProp(name, prop, value);
-        if (reason !== null) {
-          this.onJsxError?.({
-            kind: "invalid-prop",
-            message: `Invalid prop "${prop}" on <${name}>: ${reason}`,
-            tag: name,
-            prop,
-            reason,
-            location: loc,
-          });
-        }
+    if (!checkProp) return;
+    for (const [prop, value] of Object.entries(props)) {
+      const reason = checkProp(name, prop, value);
+      if (reason !== null) {
+        this.onJsxError?.({
+          kind: "invalid-prop",
+          message: `Invalid prop "${prop}" on <${name}>: ${reason}`,
+          tag: name,
+          prop,
+          reason,
+          location: loc,
+        });
       }
     }
   }
@@ -387,7 +353,6 @@ export class TreeBuilder {
   private closeTag(name: string, loc: SourceLocation): void {
     const stack = this.openStack;
     if (stack.length === 0) {
-      // Stray close with nothing open: report it, then ignore it (unchanged).
       this.onJsxError?.({
         kind: "mismatched-tag",
         message: `Stray closing tag </${name}> with nothing open`,
@@ -404,8 +369,6 @@ export class TreeBuilder {
       return;
     }
 
-    // The innermost element does not match `name`. Report first — the event
-    // fires in every recovery mode — then recover per `mismatchedTag`.
     this.onJsxError?.({
       kind: "mismatched-tag",
       message: `Mismatched closing tag </${name}>; expected </${expected}>`,
@@ -413,17 +376,12 @@ export class TreeBuilder {
       expected,
       location: loc,
     });
-    switch (this.mismatchedTag) {
-      case "ignore":
-        return;
-      case "autoclose": {
-        // Close down to a matching ancestor if there is one; otherwise treat the
-        // mismatched tag as closing the innermost element (best-effort).
-        const matchIndex = findMatch(stack, name);
-        const target = matchIndex >= 0 ? matchIndex : stack.length - 1;
-        while (stack.length > target) this.closeTop();
-        return;
-      }
+    if (this.mismatchedTag === "autoclose") {
+      // Close down to a matching ancestor if there is one; otherwise treat the
+      // tag as closing the innermost element.
+      const matchIndex = stack.findLastIndex((entry) => nodeName(entry.node) === name);
+      const target = matchIndex >= 0 ? matchIndex : stack.length - 1;
+      while (stack.length > target) this.closeTop();
     }
   }
 
@@ -435,7 +393,6 @@ export class TreeBuilder {
     freeze(entry.node);
   }
 
-  /** Append a node to the innermost open node, or to the root list. */
   private appendChild(node: Node): void {
     const parent = this.openStack[this.openStack.length - 1];
     if (parent) {
@@ -444,53 +401,10 @@ export class TreeBuilder {
       this.roots.push(node);
     }
   }
-
-  /** Clone the open path so `extras` can be appended without mutating the tree. */
-  private withFrontier(extras: Node[]): readonly Node[] {
-    const stack = this.openStack;
-    if (stack.length === 0) {
-      return extras.length > 0 ? [...this.roots, ...extras] : this.roots;
-    }
-
-    // Deepest open node: clone with its committed children + the frontier.
-    const deepest = stack[stack.length - 1]!.node;
-    let child: OpenNode = cloneOpen(deepest, [...deepest.children, ...extras]);
-    // Walk up: each parent's last child is the open node we just cloned.
-    for (let i = stack.length - 2; i >= 0; i--) {
-      const parent = stack[i]!.node;
-      const children = parent.children.slice(0, -1);
-      children.push(child);
-      child = cloneOpen(parent, children);
-    }
-    // stack[0] is the last committed root; replace it with the cloned path.
-    return [...this.roots.slice(0, -1), child];
-  }
 }
 
 function nodeName(node: OpenNode): string {
   return node.kind === "fragment" ? "" : node.tag;
-}
-
-/** Index of the topmost open node matching `name`, or -1. */
-function findMatch(stack: readonly OpenEntry[], name: string): number {
-  for (let i = stack.length - 1; i >= 0; i--) {
-    if (nodeName(stack[i]!.node) === name) return i;
-  }
-  return -1;
-}
-
-function cloneOpen(node: OpenNode, children: Node[]): OpenNode {
-  if (node.kind === "fragment") {
-    return { kind: "fragment", id: node.id, children, status: node.status };
-  }
-  return {
-    kind: "element",
-    id: node.id,
-    tag: node.tag,
-    props: node.props,
-    children,
-    status: node.status,
-  };
 }
 
 function freeze<T extends Node>(node: T): T {

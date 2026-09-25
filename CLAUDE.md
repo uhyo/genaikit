@@ -59,14 +59,16 @@ relative to `packages/incremental-jsx-parser/`:
 
 | File | Role |
 | ---- | ---- |
+| `src/ast.ts` | AST node types + the dependency-free primitives every stage shares (`UNSUPPORTED_EXPRESSION`, `isComponentName`, `resolveVariablePath` / `FORBIDDEN_SEGMENTS`). Imports nothing, which keeps the module graph acyclic. |
+| `src/errors.ts` | `JsxErrorEvent` union + `formatJsxError` (code-frame report). |
 | `src/tokenizer.ts` | Resumable, char-level state machine. Retains partial state across chunk boundaries and emits a **chunking-invariant** token stream. Text is entity-decoded and JSX-whitespace-normalized incrementally (real-JSX semantics). `getPending()` reports the renderable frontier (partial text; a possibly-incomplete entity or unresolved whitespace is withheld until it resolves). |
 | `src/tree-builder.ts` | Builds the append-only AST + open stack. Closed nodes are frozen and reused by reference; `snapshot()` overlays the single `PendingNode` frontier by cloning only the open path. Handles closing-tag mismatch (`mismatchedTag`). |
 | `src/entities.ts` | HTML character-reference decoding (numeric + the named HTML4 set + `apos`), shared by text and string attribute values. Unknown references stay verbatim. Dependency-free. |
-| `src/expression.ts` | Pure parser for the supported `{ }` subset (literals, predefined-variable references incl. dot-notation member access, + nested JSX — the latter two via injected callbacks). Returns `UNSUPPORTED_EXPRESSION` otherwise. Kept dependency-free to avoid an import cycle. |
+| `src/expression.ts` | Pure parser for the supported `{ }` subset (literals, predefined-variable references incl. dot-notation member access, + nested JSX — the latter two via injected callbacks). Returns `UNSUPPORTED_EXPRESSION` otherwise. Depends only on `ast.ts`. |
 | `src/schema.ts` | Element allowlist (`elements`) + the lightweight prop type system (`SchemaType`: primitives, `function`/`object`/`node`/`url`/`any`, unions, object shapes). Elements and component specs declare prop catalogs (`checkProp` validates every parsed prop, incl. component props); variables get declared types (`variableTypes`) or value-inferred ones (`resolveVariableType`). The built-in host rules (`style: "object"`, `on*: "function"`, URL props: `"url"`, blocked `dangerouslySetInnerHTML` &c.) are default declarations in the same system and can't be relaxed. Shared canonical checks — parse-time events and render-time enforcement both call them. `formatPromptContract` serializes the schema (types included) for the generating model's system prompt. React-free. |
-| `src/core.ts` | Public AST types + `createParser` (push-based store, version-cached `getTree`, per-chunk notifications). **Zero React dependency.** |
+| `src/core.ts` | `./core` entry: `createParser` (push-based store, version-cached `getTree`, per-chunk notifications) + re-exports of the React-free API. **Zero React dependency.** |
 | `src/stream.ts` | `pumpStream`: normalizes `ReadableStream`/`AsyncIterable` sources, decodes bytes with a streaming `TextDecoder`, supports cancellation. |
-| `src/render.ts` | AST → `ReactNode`. Component resolution, node-id keys, WeakMap memoization of closed subtrees. |
+| `src/render.ts` | AST → `ReactNode`. Component resolution (`resolveComponent`, shared with the parse-time probe), node-id keys, WeakMap memoization of closed subtrees. `RenderOptions` is the documented base of the adapter's options. |
 | `src/index.ts` | React adapter entry (`createIncrementalJsxParser`). |
 | `src/react.ts` | `useIncrementalJsx` hook (over `useSyncExternalStore`). |
 
@@ -92,8 +94,8 @@ relative to `packages/incremental-jsx-parser/`:
 
 `.` (React adapter), `./react` (hook), `./core` (framework-agnostic, incl.
 `pumpStream`). The `./core` entry must stay React-free — don't import
-`react`/`render.ts` from `core.ts`, `tokenizer.ts`, `tree-builder.ts`,
-`expression.ts`, `entities.ts`, or `stream.ts`.
+`react`/`render.ts` from `core.ts`, `ast.ts`, `errors.ts`, `tokenizer.ts`,
+`tree-builder.ts`, `expression.ts`, `schema.ts`, `entities.ts`, or `stream.ts`.
 
 ## Architecture: `packages/ingenui`
 
@@ -104,10 +106,11 @@ are relative to `packages/ingenui/`:
 
 | File | Role |
 | ---- | ---- |
+| `src/fence.ts` | CommonMark backtick-fence regex + `isFenceClose`, shared by the splitter and the Markdown renderer. |
 | `src/splitter.ts` | Resumable Markdown / ```` ```ui+jsx ```` fence splitter. Chunking-invariant commits (per complete line); a partial trailing line is a tentative "tail" (withheld while it could still be a fence); tracks regular code fences so a `ui+jsx` opener inside one is not misread. |
 | `src/channel.ts` | Single-consumer push channel; each `ui+jsx` block's extracted JSX is pushed through one into its own `createIncrementalJsxParser`. |
 | `src/markdown.tsx` | Built-in safe CommonMark-subset renderer (raw HTML stays literal text, URL schemes checked). Pure/total — re-run on a growing region while streaming. Pluggable via `renderMarkdown`. |
-| `src/actions.ts` | The `actions` convention: declared actions → the predefined `actions` variable (typed `"function"`), firing `ActionEvent`s with the canonical next-request `message`. Dynamic actions (the default; `dynamicActions: false` opts out): a Proxy resolves *any* `actions.<name>` to a notify-only action (`declared: false`) — the model defines actions by referencing them; no host code ever runs for undeclared names. |
+| `src/actions.ts` | The `actions` convention: declared actions → the predefined `actions` variable (typed `"function"`), firing `ActionEvent`s with the canonical next-request `message`. `withActionsVariable` merges it into the variables — the one place both the message runtime and the prompt do so. Dynamic actions (the default; `dynamicActions: false` opts out): a Proxy resolves *any* `actions.<name>` to a notify-only action (`declared: false`) — the model defines actions by referencing them; no host code ever runs for undeclared names. |
 | `src/issues.ts` | `GenUiIssue` union (`jsx-error` / `render-error` / `unclosed-fence`, all per `blockIndex`) + `formatIssueReport` (feedback text for the model). |
 | `src/boundary.tsx` | Per-block error boundary; `resetKey` bumps on each parser update so a crashed block retries as the stream grows. |
 | `src/message.tsx` | `createGenUiMessage`: pumps the source, drives the splitter, owns segments (cached markdown regions + per-block parsers in boundaries), collects issues, exposes a `useSyncExternalStore`-shaped store. |

@@ -16,9 +16,9 @@
  * undeclared action carries no host behavior: all it can do is emit the
  * canonical message back into the conversation (`declared: false` on the
  * event). Host-declared handlers still run only for declared names.
- * Implementation-wise the `actions` variable becomes a `Proxy` whose `has` /
- * `get` traps answer for any name, which the parser's `in`-semantics variable
- * resolution accepts and type-infers as `"function"` — no parser changes.
+ * The `actions` variable is then a `Proxy` whose `has` / `get` traps answer
+ * for any name, which the parser's `in`-semantics variable resolution accepts
+ * and type-infers as `"function"`.
  */
 
 import type { SchemaType } from "@ingenui/incremental-jsx-parser";
@@ -109,10 +109,8 @@ export function createActionsVariable(
   }
   if (!dynamic) return { values: declaredActions, type: shape };
 
-  // Lazily created notify-only wrappers, one stable function per name.
   const invented = new Map<string, ActionHandler>();
   const values = new Proxy(declaredActions, {
-    // The parser validates references with `in` semantics: any name exists.
     has: (target, prop) => typeof prop === "string" || Reflect.has(target, prop),
     get: (target, prop, receiver) => {
       // Declared actions, symbols, and inherited Object.prototype members
@@ -129,4 +127,33 @@ export function createActionsVariable(
     },
   });
   return { values, type: shape };
+}
+
+/** The actions-related options plus the predefined variables they merge into. */
+export interface ActionsOptions {
+  actions?: ActionsDefinition | undefined;
+  dynamicActions?: boolean | undefined;
+  onAction?: ActionListener | undefined;
+  variables?: Record<string, unknown> | undefined;
+  variableTypes?: Readonly<Record<string, SchemaType>> | undefined;
+}
+
+/**
+ * Resolve the actions options into the parser's predefined variables: the
+ * `actions` variable is merged in (overriding any `actions` key). Dynamic
+ * actions are the default, so the variable exists unless they are opted out
+ * and no action is declared.
+ */
+export function withActionsVariable<T extends ActionsOptions>(
+  options: T,
+): Omit<T, "actions" | "dynamicActions" | "onAction"> {
+  const { actions = {}, dynamicActions, onAction, ...rest } = options;
+  const dynamic = dynamicActions !== false;
+  if (!dynamic && Object.keys(actions).length === 0) return rest;
+  const actionsVariable = createActionsVariable(actions, onAction, dynamic);
+  return {
+    ...rest,
+    variables: { ...options.variables, actions: actionsVariable.values },
+    variableTypes: { ...options.variableTypes, actions: actionsVariable.type },
+  };
 }

@@ -32,8 +32,8 @@
 
 import type { ReactNode } from "react";
 
-const FENCE_OPEN = /^ {0,3}(`{3,})([^`]*)$/;
-const FENCE_CLOSE = /^ {0,3}(`{3,})[ \t]*$/;
+import { FENCE_OPEN, isFenceClose } from "./fence";
+
 const HEADING = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*$/;
 const THEMATIC_BREAK = /^ {0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$/;
 const BLOCKQUOTE_LINE = /^ {0,3}> ?(.*)$/;
@@ -46,15 +46,8 @@ const BLANK = /^[ \t]*$/;
  */
 const AMBIGUOUS_FRONTIER_LINE = /^ *(?:(?:[-*+_][ \t]*){1,2}|#{1,6})$/;
 
-/** True when a URL is acceptable for a link (`href`). */
-function isSafeLinkUrl(url: string): boolean {
-  return hasAllowedScheme(url, ["http", "https", "mailto"]);
-}
-
-/** True when a URL is acceptable for an image (`src`). */
-function isSafeImageUrl(url: string): boolean {
-  return hasAllowedScheme(url, ["http", "https"]);
-}
+const LINK_SCHEMES = ["http", "https", "mailto"];
+const IMAGE_SCHEMES = ["http", "https"];
 
 function hasAllowedScheme(url: string, allowed: readonly string[]): boolean {
   // Sniff the scheme with control characters and spaces stripped, so
@@ -64,7 +57,8 @@ function hasAllowedScheme(url: string, allowed: readonly string[]): boolean {
     if (ch.charCodeAt(0) > 0x20) cleaned += ch;
   }
   const scheme = /^([a-z][a-z0-9+.-]*):/.exec(cleaned.toLowerCase());
-  if (!scheme) return true; // relative URL / fragment / query
+  // No scheme: a relative URL, fragment, or query.
+  if (!scheme) return true;
   return allowed.includes(scheme[1]!);
 }
 
@@ -97,36 +91,45 @@ function canOpenEmphasis(text: string, start: number, end: number): boolean {
 }
 
 /**
- * Find a closing emphasis delimiter equal to `delim` at or after `from`. A
- * closer must follow non-whitespace, and an `_` closer must not be intraword.
+ * Find an unescaped `delim` at or after `from` that `accept`s its index, or
+ * -1.
  */
-function findEmphasisClose(text: string, delim: string, from: number): number {
+function findClose(
+  text: string,
+  delim: string,
+  from: number,
+  accept: (index: number) => boolean = () => true,
+): number {
   for (let i = from; i <= text.length - delim.length; i++) {
     if (text[i] === "\\") {
       i++;
       continue;
     }
-    if (!text.startsWith(delim, i) || isWhitespace(text[i - 1])) continue;
-    if (delim[0] === "_") {
-      let runEnd = i;
-      while (text[runEnd] === "_") runEnd++;
-      if (isAlphanumeric(text[runEnd])) continue;
-    }
-    return i;
+    if (text.startsWith(delim, i) && accept(i)) return i;
   }
   return -1;
 }
 
-/** Find a closing delimiter run equal to `delim` at or after `from`. */
-function findClose(text: string, delim: string, from: number): number {
-  for (let i = from; i <= text.length - delim.length; i++) {
-    if (text[i] === "\\") {
-      i++;
-      continue;
-    }
-    if (text.startsWith(delim, i)) return i;
-  }
-  return -1;
+/**
+ * Find a closing emphasis delimiter equal to `delim` at or after `from`. A
+ * closer must follow non-whitespace, and an `_` closer must not be intraword.
+ */
+function findEmphasisClose(text: string, delim: string, from: number): number {
+  return findClose(text, delim, from, (i) => {
+    if (isWhitespace(text[i - 1])) return false;
+    if (delim[0] !== "_") return true;
+    let runEnd = i;
+    while (text[runEnd] === "_") runEnd++;
+    return !isAlphanumeric(text[runEnd]);
+  });
+}
+
+function emphasis(double: boolean, children: ReactNode[], keys: Keys): ReactNode {
+  return double ? (
+    <strong key={keys.next++}>{children}</strong>
+  ) : (
+    <em key={keys.next++}>{children}</em>
+  );
 }
 
 /**
@@ -212,20 +215,12 @@ function renderInline(text: string, keys: Keys, frontier = false): ReactNode[] {
       }
       const double = text[i + 1] === ch;
       const delim = double ? ch + ch : ch;
-      let close = canOpenEmphasis(text, i, runEnd)
-        ? findEmphasisClose(text, delim, i + delim.length)
-        : -1;
-      if (close === -1 && frontier && canOpenEmphasis(text, i, runEnd)) {
+      const canOpen = canOpenEmphasis(text, i, runEnd);
+      let close = canOpen ? findEmphasisClose(text, delim, i + delim.length) : -1;
+      if (close === -1 && frontier && canOpen) {
         // Unterminated at the frontier: emphasis in progress runs to the end.
         flush();
-        const children = renderInline(text.slice(i + delim.length), keys, true);
-        out.push(
-          double ? (
-            <strong key={keys.next++}>{children}</strong>
-          ) : (
-            <em key={keys.next++}>{children}</em>
-          ),
-        );
+        out.push(emphasis(double, renderInline(text.slice(i + delim.length), keys, true), keys));
         i = text.length;
         continue;
       }
@@ -238,14 +233,7 @@ function renderInline(text: string, keys: Keys, frontier = false): ReactNode[] {
         const inner = text.slice(i + delim.length, close);
         if (inner.trim() !== "") {
           flush();
-          const children = renderInline(inner, keys);
-          out.push(
-            double ? (
-              <strong key={keys.next++}>{children}</strong>
-            ) : (
-              <em key={keys.next++}>{children}</em>
-            ),
-          );
+          out.push(emphasis(double, renderInline(inner, keys), keys));
           i = close + delim.length;
           continue;
         }
@@ -277,12 +265,12 @@ function renderInline(text: string, keys: Keys, frontier = false): ReactNode[] {
           const dest = text.slice(closeBracket + 2, closeParen).trim();
           flush();
           if (image) {
-            if (isSafeImageUrl(dest)) {
+            if (hasAllowedScheme(dest, IMAGE_SCHEMES)) {
               out.push(<img key={keys.next++} src={dest} alt={label} />);
             } else {
               plain += label;
             }
-          } else if (isSafeLinkUrl(dest)) {
+          } else if (hasAllowedScheme(dest, LINK_SCHEMES)) {
             out.push(
               <a key={keys.next++} href={dest}>
                 {renderInline(label, keys)}
@@ -429,8 +417,7 @@ function parseBlocks(lines: readonly string[], keys: Keys, open: boolean): React
       const body: string[] = [];
       i++;
       while (i < lines.length) {
-        const close = FENCE_CLOSE.exec(lines[i]!);
-        if (close && close[1]!.length >= size) {
+        if (isFenceClose(lines[i]!, size)) {
           i++;
           break;
         }

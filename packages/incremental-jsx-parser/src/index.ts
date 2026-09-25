@@ -8,17 +8,11 @@
  * be a drop-in for React's `useSyncExternalStore`.
  */
 
-import type { ComponentType, ReactNode } from "react";
+import type { ReactNode } from "react";
 
-import type { ElementAllowlist, JsxErrorEvent, MismatchBehavior, Node, SchemaType } from "./core";
+import type { JsxErrorEvent, MismatchBehavior, Node } from "./core";
 import { checkProp, createParser, isElementAllowed, resolveVariableType } from "./core";
-import {
-  createRenderer,
-  resolveComponentEntry,
-  type ComponentEntry,
-  type DisallowedElementBehavior,
-  type UnknownComponentBehavior,
-} from "./render";
+import { createRenderer, resolveComponent, type RenderOptions } from "./render";
 import type { JsxStreamSource } from "./stream";
 import { pumpStream } from "./stream";
 
@@ -64,77 +58,25 @@ export type {
   UnknownComponentBehavior,
 } from "./render";
 
-export interface IncrementalJsxParserOptions {
-  /**
-   * Tag name -> React component map for capitalized JSX names — the
-   * **component catalog**. An entry is either the component itself, or a
-   * `{ component, props }` spec that also declares the props the component
-   * accepts: prop names (`["title"]`), or prop name -> `SchemaType`
-   * (`{ title: "string", onAction: "function" }`). With a declaration, every
-   * prop parsed on that component is validated against it — an unknown prop
-   * or a value failing its declared type is reported (`kind: "invalid-prop"`)
-   * and dropped. Without one, props are the component author's contract.
-   */
-  components?: Record<string, ComponentEntry>;
-  /**
-   * Variable name -> value, for `{name}` / `{name.member}` expressions
-   * (dot notation only). Like `components`, this is the allowlist: every
-   * segment of a reference is validated against these values at parse time,
-   * so a path that would not resolve (unknown root name, or a member missing
-   * at any depth) renders as nothing and is reported through `onJsxError`
-   * (`kind: "unknown-variable"`). The values also give variable references
-   * their inferred `SchemaType` for prop type checking.
-   */
-  variables?: Record<string, unknown>;
-  /**
-   * Variable name -> declared `SchemaType`. Optional refinement of
-   * `variables`: a declared type (an object shape is walked along dot paths)
-   * takes precedence over the type inferred from the value, and a variable
-   * declared here counts as known even without a value. Useful when a value
-   * alone under-describes the type (or is not representative).
-   */
-  variableTypes?: Readonly<Record<string, SchemaType>>;
-  /** Placeholder rendered at the streaming frontier (default: renders null). */
-  Pending?: ComponentType<unknown>;
-  /** Optional resolver, consulted before the `components` map. */
-  resolveComponent?: (name: string) => ComponentType<never> | undefined;
-  /** Behavior for an unresolved component tag (default: "pending"). */
-  onUnknownComponent?: UnknownComponentBehavior;
-  /**
-   * Allowlist of intrinsic (lowercase) HTML elements — the schema counterpart
-   * of `components`. A list of tag names, or a record mapping each allowed
-   * tag to `true` (any prop), to its allowed prop names, or to prop name ->
-   * `SchemaType` (`{ div: true, a: { href: "url", title: "string" } }`).
-   * Absent = every intrinsic tag renders. Whether or not it is set, the
-   * built-in host prop rules always apply (see `checkProp`): string `style`
-   * values, `dangerouslySetInnerHTML` &c., non-function `on*` handlers, and
-   * `javascript:` URLs are dropped and reported (`kind: "invalid-prop"`).
-   * `formatPromptContract` serializes the whole schema into a system-prompt
-   * spec for the generating model.
-   */
-  elements?: ElementAllowlist;
-  /** Behavior for a disallowed intrinsic tag (default: "skip"). */
-  onDisallowedElement?: DisallowedElementBehavior;
+export interface IncrementalJsxParserOptions extends RenderOptions {
   /** Closing-tag mismatch recovery strategy (default: "autoclose"). */
-  mismatchedTag?: MismatchBehavior;
+  mismatchedTag?: MismatchBehavior | undefined;
   /**
    * The channel for **recoverable** errors: unified structured JSX-level
    * events (mismatched/unclosed tags, unknown components, unsupported
-   * expressions), fired synchronously **as soon as each error is parsed** —
-   * before any render, and in every `mismatchedTag` / `onUnknownComponent`
-   * mode. Recovery is unaffected, so this is the channel to feed instant
-   * feedback to a stream producer. Each event carries a `location`
-   * (line/column + the offending line's text); `formatJsxError` renders it
-   * as a ready-to-log report.
+   * expressions, schema violations), fired synchronously **as soon as each
+   * error is parsed** — before any render, and in every recovery/rendering
+   * mode. Each event carries a `location` (line/column + the offending line's
+   * text); `formatJsxError` renders it as a ready-to-log report.
    */
-  onJsxError?: (event: JsxErrorEvent) => void;
+  onJsxError?: ((event: JsxErrorEvent) => void) | undefined;
   /**
    * The channel for **unrecoverable** errors: called once if the stream
    * source fails. Parsing stops at the last good snapshot (which stays
    * rendered) and {@link IncrementalJsxParser.done} rejects with the same
    * error.
    */
-  onStreamError?: (error: unknown) => void;
+  onStreamError?: ((error: unknown) => void) | undefined;
 }
 
 /**
@@ -163,28 +105,14 @@ export function createIncrementalJsxParser(
   source: JsxStreamSource,
   options: IncrementalJsxParserOptions = {},
 ): IncrementalJsxParser {
+  // The probes only run when `onJsxError` is set.
   const core = createParser({
     mismatchedTag: options.mismatchedTag,
     onJsxError: options.onJsxError,
-    // Only probe component resolution at parse time when someone listens, so
-    // `resolveComponent` sees no extra calls otherwise.
-    isKnownComponent: options.onJsxError
-      ? (tag) =>
-          (options.resolveComponent?.(tag) ?? resolveComponentEntry(options.components?.[tag])) !=
-          null
-      : undefined,
-    // resolveVariableType consults the declared types and the values; a path
-    // covered by neither is unknown.
-    isKnownVariable: options.onJsxError
-      ? (path) => resolveVariableType(options, path) !== undefined
-      : undefined,
-    isAllowedElement:
-      options.onJsxError && options.elements
-        ? (tag) => isElementAllowed(options.elements, tag)
-        : undefined,
-    checkProp: options.onJsxError
-      ? (tag, prop, value) => checkProp(tag, prop, value, options)
-      : undefined,
+    isKnownComponent: (tag) => resolveComponent(options, tag) !== undefined,
+    isKnownVariable: (path) => resolveVariableType(options, path) !== undefined,
+    isAllowedElement: (tag) => isElementAllowed(options.elements, tag),
+    checkProp: (tag, prop, value) => checkProp(tag, prop, value, options),
   });
   const renderer = createRenderer(options);
 

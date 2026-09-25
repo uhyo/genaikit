@@ -6,10 +6,11 @@
  * feedback direction.
  */
 
-import type { PromptContractOptions, SchemaType } from "@ingenui/incremental-jsx-parser";
+import type { PromptContractOptions } from "@ingenui/incremental-jsx-parser";
 import { formatPromptContract } from "@ingenui/incremental-jsx-parser";
 
 import type { ActionsDefinition } from "./actions";
+import { withActionsVariable } from "./actions";
 
 export interface GenUiPromptOptions extends PromptContractOptions {
   /**
@@ -32,7 +33,7 @@ export interface GenUiPromptOptions extends PromptContractOptions {
  * and the exact JSX subset/schema the blocks must follow.
  */
 export function formatGenUiPrompt(options: GenUiPromptOptions = {}): string {
-  const { actions, dynamicActions, variables, variableTypes, ...contract } = options;
+  const { actions, dynamicActions } = options;
   const dynamic = dynamicActions !== false;
 
   const lines: string[] = [
@@ -55,8 +56,7 @@ export function formatGenUiPrompt(options: GenUiPromptOptions = {}): string {
   ];
 
   const actionNames = Object.keys(actions ?? {});
-  const hasActions = actionNames.length > 0 || dynamic;
-  if (hasActions) {
+  if (actionNames.length > 0 || dynamic) {
     lines.push(
       "",
       "## Actions",
@@ -82,21 +82,7 @@ export function formatGenUiPrompt(options: GenUiPromptOptions = {}): string {
     );
   }
 
-  // Merge the actions into the contract's predefined variables, exactly as
-  // createGenUiMessage merges them into the parser's.
-  const mergedVariables = hasActions ? { ...variables, actions: {} } : variables;
-  const actionsType: SchemaType = Object.fromEntries(actionNames.map((name) => [name, "function"]));
-  const mergedTypes = hasActions ? { ...variableTypes, actions: actionsType } : variableTypes;
-
-  lines.push(
-    "",
-    "## UI contract",
-    formatPromptContract({
-      ...contract,
-      ...(mergedVariables !== undefined && { variables: mergedVariables }),
-      ...(mergedTypes !== undefined && { variableTypes: mergedTypes }),
-    }),
-  );
+  lines.push("", "## UI contract", formatPromptContract(withActionsVariable(options)));
 
   return lines.join("\n");
 }
