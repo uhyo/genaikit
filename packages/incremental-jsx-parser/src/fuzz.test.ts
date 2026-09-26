@@ -8,8 +8,9 @@ import { Tokenizer } from "./tokenizer";
 import { TreeBuilder } from "./tree-builder";
 
 // A homegrown, seeded generator of in-spec JSX (no external fast-check dep).
-// The property under test (PLAN §9.6): the final parsed result must be
-// independent of how the input string is split into chunks.
+// The properties under test: the final parsed result must be independent of
+// how the input string is split into chunks (PLAN §9.6), and every
+// intermediate snapshot keeps a single frontier (PLAN §1).
 
 function makeRng(seed: number): () => number {
   let s = seed % 0x7fffffff;
@@ -97,6 +98,35 @@ function genElement(rng: Rng, depth: number): string {
   return `<${name}${attrs}>${genChildren(rng, depth)}</${name}>`;
 }
 
+/**
+ * The single-frontier invariant (PLAN §1): exactly one `Pending` node, the
+ * last child of the innermost open element (or at the root when nothing is
+ * open). Returns a description of the violation, or null.
+ */
+function frontierViolation(nodes: readonly Node[]): string | null {
+  let pendings = 0;
+  const count = (list: readonly Node[]): void => {
+    for (const node of list) {
+      if (node.kind === "pending") pendings++;
+      else if (node.kind === "element" || node.kind === "fragment") count(node.children);
+    }
+  };
+  count(nodes);
+  if (pendings !== 1) return `expected exactly one Pending, found ${pendings}`;
+
+  // Walk the open path: each level ends in an open container or the Pending.
+  let level = nodes;
+  for (;;) {
+    const last = level.at(-1);
+    if (last?.kind === "pending") return null;
+    if ((last?.kind === "element" || last?.kind === "fragment") && last.status === "open") {
+      level = last.children;
+      continue;
+    }
+    return "Pending is not the last child of the innermost open element";
+  }
+}
+
 function parse(input: string, chunkSizes: number[]): readonly Node[] {
   const tk = new Tokenizer();
   const tb = new TreeBuilder();
@@ -104,6 +134,8 @@ function parse(input: string, chunkSizes: number[]): readonly Node[] {
   for (const size of chunkSizes) {
     for (const token of tk.write(input.slice(offset, offset + size))) tb.push(token);
     offset += size;
+    const violation = frontierViolation(tb.snapshot(tk.getPending()));
+    if (violation) throw new Error(`${violation} after ${JSON.stringify(input.slice(0, offset))}`);
   }
   for (const token of tk.write(input.slice(offset))) tb.push(token);
   for (const token of tk.end()) tb.push(token);
@@ -126,8 +158,8 @@ function randomSplits(rng: Rng, length: number): number[] {
   return sizes;
 }
 
-describe("Fuzz — chunking invariance of the final result (PLAN §9.6)", () => {
-  it("parses identically regardless of chunk boundaries", () => {
+describe("Fuzz — chunking invariance (PLAN §9.6) and single frontier (PLAN §1)", () => {
+  it("parses identically regardless of chunk boundaries, with one frontier throughout", () => {
     for (let trial = 0; trial < 300; trial++) {
       const rng = makeRng(trial * 2654435761 + 1);
       const input = genChildren(rng, 4) || "<div>fallback</div>";

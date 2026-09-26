@@ -30,4 +30,24 @@ describe("useGenUiMessage", () => {
     expect(container.innerHTML).toBe("<main><h1>Title</h1><div>ui</div></main>");
     expect(message!.getIssueReport()).toBeNull();
   });
+
+  it("cancels the source stream on unmount", async () => {
+    let cancelled = false;
+    const source = new ReadableStream<string>({
+      start(controller) {
+        controller.enqueue("Streaming…");
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const View = () => <main>{useGenUiMessage(source).node}</main>;
+    const { container, unmount } = render(<View />);
+    await act(settle);
+    expect(container.innerHTML).toBe("<main><p>Streaming…</p></main>");
+
+    unmount();
+    await settle();
+    expect(cancelled).toBe(true);
+  });
 });

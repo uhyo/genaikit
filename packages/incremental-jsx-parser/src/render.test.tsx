@@ -29,6 +29,10 @@ function Card({ children }: { children?: ReactNode }): ReactNode {
   return createElement("div", { className: "card" }, children);
 }
 
+function Other(): ReactNode {
+  return createElement("em", null, "map");
+}
+
 function Spinner(): ReactNode {
   return createElement("i", { className: "spin" });
 }
@@ -66,12 +70,15 @@ describe("React adapter — component resolution", () => {
     );
   });
 
-  it("resolves through resolveComponent before the map", () => {
-    const resolveComponent = vi.fn(() => Card);
-    expect(toHtml(build("<Whatever>x</Whatever>", { end: true }), { resolveComponent })).toBe(
-      `<div class="card">x</div>`,
-    );
-    expect(resolveComponent).toHaveBeenCalledWith("Whatever");
+  it("consults resolveComponent first, falling back to the map", () => {
+    const resolveComponent = vi.fn((name: string) => (name === "Card" ? Card : undefined));
+    expect(
+      toHtml(build("<Card>x</Card><Other/>", { end: true }), {
+        resolveComponent,
+        components: { Card: Other, Other },
+      }),
+    ).toBe(`<div class="card">x</div><em>map</em>`);
+    expect(resolveComponent).toHaveBeenCalledWith("Other");
   });
 
   it("unknown component -> Pending by default", () => {

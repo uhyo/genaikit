@@ -108,15 +108,22 @@ describe("useIncrementalJsx", () => {
     expect(mounts).toBe(1);
   });
 
-  it("disposes the parser on unmount", async () => {
-    const { stream, push } = controllable();
+  it("cancels the stream on unmount", async () => {
+    let cancelled = false;
+    const stream = new ReadableStream<string>({
+      start(controller) {
+        controller.enqueue("<div>x");
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
     const { container, unmount } = render(<Streamed stream={stream} />);
-
-    push("<div>x");
     await flush();
     expect(container.innerHTML).toBe('<div>x<span data-testid="pending">…</span></div>');
 
-    // Should not throw and should detach cleanly.
-    expect(() => unmount()).not.toThrow();
+    unmount();
+    await flush();
+    expect(cancelled).toBe(true);
   });
 });

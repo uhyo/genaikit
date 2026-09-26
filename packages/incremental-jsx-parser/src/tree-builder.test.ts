@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ElementNode, FragmentNode, Node } from "./core";
+import type { ElementNode, Node } from "./core";
 import { Tokenizer } from "./tokenizer";
 import { TreeBuilder } from "./tree-builder";
 
@@ -71,9 +71,11 @@ describe("TreeBuilder — structure", () => {
     expect(ser(build("<br/>"))).toBe("<br></br><Pending/>");
   });
 
-  it("handles fragments", () => {
-    expect(ser(build("<><b>x</b>", { end: false }))).toBe("<><b>x</b><Pending/></>");
-    expect(ser(build("<>x</>", { end: true }))).toBe("<>x</>");
+  it("handles fragments, freezing them on close like elements", () => {
+    expect(ser(build("<><b>x</b>"))).toBe("<><b>x</b><Pending/></>");
+    const closed = build("<>x</>", { end: true });
+    expect(ser(closed)).toBe("<>x</>");
+    expect(Object.isFrozen(closed[0])).toBe(true);
   });
 
   it("collects string and boolean-shorthand props", () => {
@@ -145,14 +147,5 @@ describe("TreeBuilder — incrementality", () => {
     const committed = (tb.snapshot(tk.getPending())[0] as ElementNode).children[0] as Node;
     expect(committed.kind).toBe("text");
     expect(committed.id).toBe(id1);
-  });
-});
-
-describe("TreeBuilder — frozen fragment", () => {
-  it("freezes fragments on close", () => {
-    const nodes = build("<>x</>", { end: true });
-    const frag = nodes[0] as FragmentNode;
-    expect(frag.kind).toBe("fragment");
-    expect(Object.isFrozen(frag)).toBe(true);
   });
 });

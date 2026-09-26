@@ -313,8 +313,12 @@ describe("parse-time events through the React adapter", () => {
     expect(disallowed?.location.column).toBe(1);
 
     const invalid = events.find((e) => e.kind === "invalid-prop");
-    expect(invalid).toMatchObject({ tag: "div", prop: "style" });
-    expect(invalid && invalid.kind === "invalid-prop" && invalid.reason.length > 0).toBe(true);
+    expect(invalid).toMatchObject({
+      tag: "div",
+      prop: "style",
+      reason: "expected object (a predefined variable reference), got string",
+      location: { line: 1, column: 26 },
+    });
   });
 
   it("stays quiet for schema-conforming input", async () => {
@@ -431,6 +435,11 @@ describe("formatPromptContract", () => {
     );
     // A description alone makes a spec: any props, but still described.
     expect(contract).toContain("- <Note>\n  A short aside.");
+  });
+
+  it("lists the list-form allowlist as a closed set", () => {
+    const contract = formatPromptContract({ elements: ["div", "p"] });
+    expect(contract).toContain("- <div>\n- <p>\n- Never use an element outside this list.");
   });
 
   it("falls back to sensible wording when nothing is configured", () => {

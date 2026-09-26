@@ -69,13 +69,6 @@ describe("Error handling — truncated input", () => {
   });
 });
 
-describe("Error handling — last good snapshot is preserved (no end)", () => {
-  it("keeps already-parsed content visible mid-stream", () => {
-    // Without end(), the frontier Pending (default: null) is present but invisible.
-    expect(html("<div>partial", { end: false })).toBe("<div>partial</div>");
-  });
-});
-
 /** Run `input` through the core parser, collecting unified error events. */
 function collectEvents(
   input: string,
@@ -215,13 +208,6 @@ describe("Unified JSX error events (onJsxError)", () => {
     expect(collectEvents(`<p title={"t"}>{42}{"s"}{null}</p>`)).toEqual([]);
   });
 
-  it("reports errors inside nested JSX expressions", () => {
-    const events = collectEvents("<p>{<Nope/>}</p>", { isKnownComponent: () => false });
-    expect(events).toMatchObject([
-      { kind: "unknown-component", message: "Unknown component <Nope>", tag: "Nope" },
-    ]);
-  });
-
   it("reports unclosed tags at end of input, innermost first", () => {
     expect(collectEvents("<div><span>hi")).toMatchObject([
       { kind: "unclosed-tag", message: "Unclosed tag <span> at end of input", tag: "span" },
@@ -232,25 +218,6 @@ describe("Unified JSX error events (onJsxError)", () => {
     ]);
     // A cleanly closed document reports nothing.
     expect(collectEvents("<div>ok</div>")).toEqual([]);
-  });
-
-  it("emits the same events regardless of how the input is chunked", () => {
-    const input = "<a><B>x</c>{fn()}</a>";
-    const opts = { isKnownComponent: () => false };
-    const reference = collectEvents(input, opts);
-    expect(reference.map((e) => e.kind)).toEqual([
-      "unknown-component",
-      "mismatched-tag",
-      "unsupported-expression",
-    ]);
-    for (let i = 1; i < input.length; i++) {
-      const events: JsxErrorEvent[] = [];
-      const p = createParser({ ...opts, onJsxError: (e) => events.push(e) });
-      p.write(input.slice(0, i));
-      p.write(input.slice(i));
-      p.end();
-      expect(events).toEqual(reference);
-    }
   });
 });
 
@@ -320,20 +287,25 @@ describe("Error locations (line / column / lineText)", () => {
   });
 
   it("reports errors inside a nested JSX expression at the enclosing `{`", () => {
-    const events = collectEvents("<p>{<Nope/>}</p>", { isKnownComponent: () => false });
-    expect(events[0]?.location).toEqual({
-      line: 1,
-      column: 4,
-      offset: 3,
-      lineText: "<p>{<Nope/>}",
-    });
+    expect(collectEvents("<p>{<Nope/>}</p>", { isKnownComponent: () => false })).toEqual([
+      {
+        kind: "unknown-component",
+        message: "Unknown component <Nope>",
+        tag: "Nope",
+        location: { line: 1, column: 4, offset: 3, lineText: "<p>{<Nope/>}" },
+      },
+    ]);
   });
 
-  it("emits the same locations regardless of how the input is chunked", () => {
+  it("emits the same events and locations regardless of how the input is chunked", () => {
     const input = "<a>\n  <B>x</c>\n  {fn()}\n</a>";
     const opts = { isKnownComponent: () => false };
     const reference = collectEvents(input, opts);
-    expect(reference).toHaveLength(3);
+    expect(reference.map((e) => e.kind)).toEqual([
+      "unknown-component",
+      "mismatched-tag",
+      "unsupported-expression",
+    ]);
     for (let i = 1; i < input.length; i++) {
       const events: JsxErrorEvent[] = [];
       const p = createParser({ ...opts, onJsxError: (e) => events.push(e) });

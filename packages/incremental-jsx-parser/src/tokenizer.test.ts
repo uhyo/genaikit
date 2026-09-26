@@ -90,16 +90,14 @@ describe("Tokenizer — emission", () => {
     ]);
   });
 
-  it("tokenizes boolean shorthand attributes", () => {
-    expect(bare(tokenize(`<input disabled required>`))).toEqual([
+  it("tokenizes boolean shorthand attributes before `>`, `/>`, and another attribute", () => {
+    expect(bare(tokenize(`<input disabled type="text" required>`))).toEqual([
       { type: "openTagStart", name: "input" },
       { type: "attribute", name: "disabled", value: { type: "boolean" } },
+      { type: "attribute", name: "type", value: { type: "string", value: "text" } },
       { type: "attribute", name: "required", value: { type: "boolean" } },
       { type: "openTagEnd" },
     ]);
-  });
-
-  it("handles a boolean attr immediately before self-close", () => {
     expect(bare(tokenize(`<hr noshade/>`))).toEqual([
       { type: "openTagStart", name: "hr" },
       { type: "attribute", name: "noshade", value: { type: "boolean" } },
@@ -107,13 +105,14 @@ describe("Tokenizer — emission", () => {
     ]);
   });
 
-  it("mixes boolean and valued attributes", () => {
-    expect(bare(tokenize(`<input type="text" disabled value="x">`))).toEqual([
-      { type: "openTagStart", name: "input" },
-      { type: "attribute", name: "type", value: { type: "string", value: "text" } },
-      { type: "attribute", name: "disabled", value: { type: "boolean" } },
-      { type: "attribute", name: "value", value: { type: "string", value: "x" } },
+  it("allows whitespace around `=` and before a closing tag's `>`", () => {
+    expect(bare(tokenize(`<a x = "1" y\n={2}>t</a >`))).toEqual([
+      { type: "openTagStart", name: "a" },
+      { type: "attribute", name: "x", value: { type: "string", value: "1" } },
+      { type: "attribute", name: "y", value: { type: "expression", raw: "2" } },
       { type: "openTagEnd" },
+      { type: "text", value: "t" },
+      { type: "closeTag", name: "a" },
     ]);
   });
 
@@ -146,19 +145,16 @@ describe("Tokenizer — emission", () => {
     ]);
   });
 
-  it("tokenizes capitalized component names", () => {
-    expect(bare(tokenize("<Card></Card>"))).toEqual([
+  it("allows capitalized, hyphenated, and dotted names", () => {
+    expect(bare(tokenize("<Card><my-el></my-el><Icons.Star/></Card>"))).toEqual([
       { type: "openTagStart", name: "Card" },
       { type: "openTagEnd" },
-      { type: "closeTag", name: "Card" },
-    ]);
-  });
-
-  it("allows hyphen and dot in names", () => {
-    expect(bare(tokenize("<my-el></my-el>"))).toEqual([
       { type: "openTagStart", name: "my-el" },
       { type: "openTagEnd" },
       { type: "closeTag", name: "my-el" },
+      { type: "openTagStart", name: "Icons.Star" },
+      { type: "selfClose" },
+      { type: "closeTag", name: "Card" },
     ]);
   });
 });
@@ -277,18 +273,6 @@ function textOf(input: string): string {
 }
 
 describe("Tokenizer — JSX whitespace rules", () => {
-  it("drops indentation-only runs around child elements", () => {
-    expect(bare(tokenize("<div>\n  <p>x</p>\n</div>"))).toEqual([
-      { type: "openTagStart", name: "div" },
-      { type: "openTagEnd" },
-      { type: "openTagStart", name: "p" },
-      { type: "openTagEnd" },
-      { type: "text", value: "x" },
-      { type: "closeTag", name: "p" },
-      { type: "closeTag", name: "div" },
-    ]);
-  });
-
   it("strips indentation and joins lines with a single space", () => {
     expect(textOf("<p>hello\n  world</p>")).toBe("hello world");
     expect(textOf("<p>\n  hello\n  world\n</p>")).toBe("hello world");
@@ -408,7 +392,8 @@ describe("Tokenizer — getPending (frontier)", () => {
 
 describe("Tokenizer — chunking invariance (PLAN §5)", () => {
   // Locations are part of every compared token, so this suite also checks that
-  // line/column/lineText do not depend on chunk boundaries.
+  // line/column/lineText do not depend on chunk boundaries. Arbitrary
+  // (non-uniform) splits of generated input are covered by fuzz.test.ts.
   const inputs = [
     "<div>Hello</div>",
     "<div><span>hi</span> world</div>",
@@ -417,14 +402,18 @@ describe("Tokenizer — chunking invariance (PLAN §5)", () => {
     "<br /><hr/><img />",
     "plain text only",
     "<Card><Button label='ok' primary /></Card>",
+    `<a x = "1" y\n={2}>t</a >`,
     "  <div>  spaced  </div>  ",
     `<a t="a<b>{c}">deep</a>`,
     "<div>\n  <p a={1}>x</p>\n  {42}\n</div>",
+    `<div title={"a}b"}>x{42}y{<b k='}'>z</b>}</div>`,
     "<ul>\n<li>one\n<li>two\n</ul>",
     "<p>hello\n  world &amp; more</p>",
     "<div>\n\t<p>&lt;tag&gt; &#x1F600;</p>\n\t \n</div>",
     "<p>broken &amp and &nope; &#xG; &#</p>",
     `<a title="a &amp; b">x &amp</a>`,
+    // Size-1 chunks split the surrogate pair of 😀.
+    "<p>café 😀 漢字</p>",
   ];
 
   for (const input of inputs) {
@@ -436,41 +425,4 @@ describe("Tokenizer — chunking invariance (PLAN §5)", () => {
       }
     });
   }
-
-  it("is invariant under randomized splits", () => {
-    const input = "<section id='s'><h1>Title</h1><p class='lead'>Body text here.</p></section>";
-    const whole = tokenize(input);
-    let seed = 12345;
-    const rand = () => {
-      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-      return seed / 0x7fffffff;
-    };
-    for (let trial = 0; trial < 200; trial++) {
-      const sizes: number[] = [];
-      let remaining = input.length;
-      while (remaining > 0) {
-        const take = 1 + Math.floor(rand() * Math.min(5, remaining));
-        sizes.push(take);
-        remaining -= take;
-      }
-      expect(tokenize(input, sizes)).toEqual(whole);
-    }
-  });
-
-  it("handles multi-byte characters split across iteration", () => {
-    // The tokenizer receives decoded strings; ensure code points survive
-    // accumulation regardless of chunking (byte-level splits are the decoder's
-    // job, handled in Phase 4).
-    const input = "<p>café 😀 漢字</p>";
-    const whole = tokenize(input);
-    expect(bare(whole)).toEqual([
-      { type: "openTagStart", name: "p" },
-      { type: "openTagEnd" },
-      { type: "text", value: "café 😀 漢字" },
-      { type: "closeTag", name: "p" },
-    ]);
-    for (let size = 1; size <= input.length; size++) {
-      expect(tokenize(input, fixedChunks(input, size))).toEqual(whole);
-    }
-  });
 });

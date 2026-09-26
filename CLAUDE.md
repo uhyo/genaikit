@@ -152,7 +152,8 @@ pnpm run build   # build all packages
 Tooling: TypeScript (strict), Vitest + happy-dom, oxlint + oxfmt, tsdown,
 publint + attw. Each `src/*.ts(x)` has a colocated `*.test.ts(x)`; the fuzz suite
 (`packages/incremental-jsx-parser/src/fuzz.test.ts`) checks chunk-independence
-over generated input.
+and the single-frontier invariant over generated input. The `./core` entry's
+React-freedom is enforced by `core.test.ts` (like `server.test.ts` in ingenui).
 
 ## Release flow (Changesets)
 
