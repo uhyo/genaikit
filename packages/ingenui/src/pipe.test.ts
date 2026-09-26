@@ -76,8 +76,9 @@ describe("pipeGenUi", () => {
     await reader.cancel();
     expect(cancelled).toBe(true);
     // No end-of-message checks after a cancel (no unclosed-fence).
-    const issues = await pipe.done;
-    expect(issues.every((issue) => issue.kind === "jsx-error")).toBe(true);
+    const kinds = (await pipe.done).map((issue) => issue.kind);
+    expect(kinds.length).toBeGreaterThan(0);
+    expect(kinds).not.toContain("unclosed-fence");
   });
 
   it("errors the stream and rejects done when the source fails", async () => {

@@ -58,19 +58,13 @@ describe("createGenUiMessage — rendering", () => {
     );
   });
 
-  it("keeps a stable snapshot reference until the content changes", async () => {
-    const message = createGenUiMessage(iterableFrom(["hello\n"]));
-    await message.done;
-    const a = message.getSnapshot();
-    expect(message.getSnapshot()).toBe(a);
-  });
-
-  it("reuses settled markdown region elements across snapshots", async () => {
+  it("keeps the snapshot stable, and settled regions' elements across changes", async () => {
     const outer = createPushChannel();
     const message = createGenUiMessage(outer.source);
     outer.push("First paragraph.\n\n```ui+jsx\n<div/>\n```\n");
     await settle();
     const before = message.getSnapshot() as ReactNode[];
+    expect(message.getSnapshot()).toBe(before); // stable until the content changes
     outer.push("tail text");
     await settle();
     const after = message.getSnapshot() as ReactNode[];
@@ -154,68 +148,9 @@ describe("createGenUiMessage — rendering", () => {
 });
 
 describe("createGenUiMessage — actions", () => {
-  it("wires actions into the UI and emits ActionEvents on invocation", async () => {
-    const fired: string[] = [];
+  it("runs declared handlers and emits ActionEvents for declared and model-defined actions", async () => {
     const submitted = vi.fn();
-    const message = createGenUiMessage(
-      iterableFrom(["```ui+jsx\n<button onClick={actions.submit}>Go</button>\n```\n"]),
-      {
-        actions: { submit: submitted },
-        onAction: (event) => fired.push(event.message),
-      },
-    );
-    await message.done;
-    expect(message.getIssueReport()).toBeNull();
-
-    const { getByRole } = render(<>{message.getSnapshot()}</>);
-    act(() => {
-      getByRole("button").click();
-    });
-
-    expect(submitted).toHaveBeenCalledOnce();
-    expect(fired).toEqual(["The `actions.submit` action was fired by the user."]);
-  });
-
-  it("reports an undeclared action as an issue when dynamicActions is opted out", async () => {
-    const issues: GenUiIssue[] = [];
-    const message = createGenUiMessage(
-      iterableFrom(["```ui+jsx\n<button onClick={actions.launch}>Go</button>\n```\n"]),
-      { actions: { submit: true }, dynamicActions: false, onIssue: (issue) => issues.push(issue) },
-    );
-    await message.done;
-    expect(issues.map((i) => i.kind)).toEqual(["jsx-error"]);
-    expect(message.getIssueReport()).toContain("actions.launch");
-  });
-
-  it("accepts model-defined actions by default", async () => {
-    const fired: { name: string; declared: boolean; message: string }[] = [];
-    const message = createGenUiMessage(
-      iterableFrom(["```ui+jsx\n<button onClick={actions.choosePlanPro}>Pro</button>\n```\n"]),
-      {
-        onAction: ({ name, declared, message: text }) =>
-          fired.push({ name, declared, message: text }),
-      },
-    );
-    await message.done;
-    expect(message.getIssues()).toEqual([]);
-
-    const { getByRole } = render(<>{message.getSnapshot()}</>);
-    act(() => {
-      getByRole("button").click();
-    });
-
-    expect(fired).toEqual([
-      {
-        name: "choosePlanPro",
-        declared: false,
-        message: "The `actions.choosePlanPro` action was fired by the user.",
-      },
-    ]);
-  });
-
-  it("mixes declared handlers with dynamic actions", async () => {
-    const submitted = vi.fn();
-    const fired: [string, boolean][] = [];
+    const fired: [string, boolean, string][] = [];
     const message = createGenUiMessage(
       iterableFrom([
         "```ui+jsx\n<div><button onClick={actions.submit}>Send</button>",
@@ -223,10 +158,11 @@ describe("createGenUiMessage — actions", () => {
       ]),
       {
         actions: { submit: submitted },
-        onAction: (event) => fired.push([event.name, event.declared]),
+        onAction: (event) => fired.push([event.name, event.declared, event.message]),
       },
     );
     await message.done;
+    // Model-defined actions are accepted by default (dynamicActions).
     expect(message.getIssues()).toEqual([]);
 
     const { getAllByRole } = render(<>{message.getSnapshot()}</>);
@@ -236,8 +172,8 @@ describe("createGenUiMessage — actions", () => {
 
     expect(submitted).toHaveBeenCalledOnce();
     expect(fired).toEqual([
-      ["submit", true],
-      ["dismissHelp", false],
+      ["submit", true, "The `actions.submit` action was fired by the user."],
+      ["dismissHelp", false, "The `actions.dismissHelp` action was fired by the user."],
     ]);
   });
 });
@@ -283,6 +219,31 @@ describe("createGenUiMessage — issues", () => {
     expect(container.innerHTML).toBe("<p>ok</p><em>block 1 hidden</em>");
     expect(issues.map((i) => i.kind)).toEqual(["render-error"]);
     expect(message.getIssueReport()).toContain("Rendering crashed: component exploded");
+  });
+
+  it("reports a crash that persists across retries only once", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const Boom = (): ReactNode => {
+      throw new Error("always broken");
+    };
+    const outer = createPushChannel();
+    const message = createGenUiMessage(outer.source, { components: { Boom } });
+    const View = () => <>{useGenUiNode(message)}</>;
+    render(<View />);
+
+    // Every chunk updates the block, and each update retries the render.
+    for (const chunk of ["```ui+jsx\n<Boom>a", "b", "c</Boom>\n```\n"]) {
+      // oxlint-disable-next-line no-await-in-loop
+      await act(async () => {
+        outer.push(chunk);
+        await settle();
+      });
+    }
+    outer.close();
+    await act(async () => {
+      await message.done;
+    });
+    expect(message.getIssues().map((i) => i.kind)).toEqual(["render-error"]);
   });
 
   it("retries a crashed block as more of the stream arrives (self-healing)", async () => {
@@ -334,18 +295,22 @@ describe("createGenUiMessage — lifecycle", () => {
     expect(html(message.getSnapshot())).toBe("<p>some text</p><div>partial</div>");
   });
 
-  it("dispose cancels the stream", async () => {
+  it("dispose cancels the stream, including an open ui block", async () => {
     const outer = createPushChannel();
     const message = createGenUiMessage(outer.source);
-    outer.push("hello");
+    outer.push("hello\n\n```ui+jsx\n<p>x");
     await settle();
+    const before = html(message.getSnapshot());
+    expect(before).toBe("<p>hello</p><p>x</p>");
     message.dispose();
-    outer.push(" more");
+    outer.push("y</p>\n```\nmore text\n");
     await settle();
-    expect(html(message.getSnapshot())).toBe("<p>hello</p>");
+    expect(html(message.getSnapshot())).toBe(before);
+    // Settles rather than waiting forever on the open block's parser.
+    await message.done;
   });
 
-  it("notifies subscribers as chunks arrive", async () => {
+  it("notifies subscribers as chunks arrive, until they unsubscribe", async () => {
     const outer = createPushChannel();
     const message = createGenUiMessage(outer.source);
     let notified = 0;
@@ -353,8 +318,12 @@ describe("createGenUiMessage — lifecycle", () => {
     outer.push("a");
     await settle();
     expect(notified).toBeGreaterThan(0);
+
     unsubscribe();
+    const seen = notified;
+    outer.push("b\n```ui+jsx\n<p>c</p>\n```\n");
     outer.close();
     await message.done;
+    expect(notified).toBe(seen);
   });
 });

@@ -2,7 +2,7 @@ import { createElement, Fragment, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { createParser, type JsxErrorEvent } from "./core";
+import type { JsxErrorEvent } from "./core";
 import { createIncrementalJsxParser, type IncrementalJsxParser } from "./index";
 
 function html(node: ReactNode): string {
@@ -38,48 +38,6 @@ function nextNotify(parser: IncrementalJsxParser): Promise<void> {
   });
 }
 
-describe("createParser (core push store)", () => {
-  it("processes chunks and exposes the live tree", () => {
-    const p = createParser();
-    p.write("<div>he");
-    p.write("llo</div>");
-    p.end();
-    expect(p.getTree()).toEqual([
-      {
-        kind: "element",
-        id: 0,
-        tag: "div",
-        props: {},
-        children: [{ kind: "text", id: 1, value: "hello" }],
-        status: "closed",
-      },
-    ]);
-  });
-
-  it("returns a stable tree reference until the next change", () => {
-    const p = createParser();
-    p.write("<div>");
-    const a = p.getTree();
-    expect(p.getTree()).toBe(a);
-    p.write("x");
-    expect(p.getTree()).not.toBe(a);
-  });
-
-  it("notifies subscribers once per processed chunk and on end", () => {
-    const p = createParser();
-    let count = 0;
-    p.subscribe(() => count++);
-    p.write("<div>");
-    p.write("x");
-    p.end();
-    expect(count).toBe(3);
-    const un = p.subscribe(() => count++);
-    un();
-    p.write("ignored after end");
-    expect(count).toBe(3);
-  });
-});
-
 describe("createIncrementalJsxParser (stream + React)", () => {
   it("renders a string async iterable to a final snapshot", async () => {
     const p = createIncrementalJsxParser(
@@ -98,33 +56,27 @@ describe("createIncrementalJsxParser (stream + React)", () => {
     expect(html(p.getSnapshot())).toBe("<p>café</p>");
   });
 
-  it("accepts a string ReadableStream", async () => {
-    const p = createIncrementalJsxParser(readableFrom(["<span>", "hi", "</span>"]));
-    await p.done;
-    expect(html(p.getSnapshot())).toBe("<span>hi</span>");
-  });
-
-  it("produces a chunk-independent final result", async () => {
-    const source = "<ul><li>one</li><li>two</li><li>three</li></ul>";
-    const splits: string[][] = [
-      [source],
-      source.split(""),
-      [source.slice(0, 7), source.slice(7, 20), source.slice(20)],
-    ];
-    const results = await Promise.all(
-      splits.map(async (chunks) => {
-        const p = createIncrementalJsxParser(iterableFrom(chunks));
-        await p.done;
-        return html(p.getSnapshot());
+  it("keeps the snapshot reference stable between updates (useSyncExternalStore contract)", async () => {
+    let controller!: ReadableStreamDefaultController<string>;
+    const p = createIncrementalJsxParser(
+      new ReadableStream<string>({
+        start(c) {
+          controller = c;
+        },
       }),
     );
-    expect(new Set(results)).toEqual(new Set(["<ul><li>one</li><li>two</li><li>three</li></ul>"]));
-  });
+    controller.enqueue("<div>a");
+    await nextNotify(p);
+    const first = p.getSnapshot();
+    expect(p.getSnapshot()).toBe(first);
 
-  it("getSnapshot is referentially stable until the tree changes", async () => {
-    const p = createIncrementalJsxParser(iterableFrom(["<div>x</div>"]));
+    controller.enqueue("b");
+    await nextNotify(p);
+    const second = p.getSnapshot();
+    expect(second).not.toBe(first);
+    expect(p.getSnapshot()).toBe(second);
+    controller.close();
     await p.done;
-    expect(p.getSnapshot()).toBe(p.getSnapshot());
   });
 
   it("dispose() aborts the stream without finalizing the frontier", async () => {

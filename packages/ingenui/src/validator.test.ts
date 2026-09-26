@@ -30,6 +30,10 @@ describe("validateGenUiMessage", () => {
       "",
     ].join("\n");
     expect(validateGenUiMessage(text, schema)).toEqual([]);
+    const validator = createGenUiValidator(schema);
+    validator.write(text);
+    validator.end();
+    expect(validator.getIssueReport()).toBeNull();
   });
 
   it("reports schema violations per block", () => {
@@ -98,25 +102,20 @@ describe("createGenUiValidator", () => {
     expect(validator.getIssueReport()).toContain("In `ui+jsx` block 1:");
   });
 
-  it("is chunking-invariant", () => {
+  it("is chunking-invariant, source locations included", () => {
     const text =
       "a\n```ui+jsx\n<Card title={1}><Chart /></Card>\n<p>{x}</p>\n```\nb\n```ui+jsx\n<div>";
     const whole = validateGenUiMessage(text, schema);
+    expect(kinds(whole)).toEqual([
+      "jsx:invalid-prop",
+      "jsx:unknown-component",
+      "jsx:unknown-variable",
+      "jsx:unclosed-tag",
+      "unclosed-fence",
+    ]);
     const validator = createGenUiValidator(schema);
     for (const char of text) validator.write(char);
     validator.end();
-    const strip = (issues: readonly GenUiIssue[]) =>
-      issues.map((issue) =>
-        issue.kind === "jsx-error" ? { ...issue, event: issue.event.message } : issue,
-      );
-    expect(strip(validator.getIssues())).toEqual(strip(whole));
-    expect(whole.length).toBeGreaterThan(0);
-  });
-
-  it("returns null as the report for a clean message", () => {
-    const validator = createGenUiValidator(schema);
-    validator.write("just text\n");
-    validator.end();
-    expect(validator.getIssueReport()).toBeNull();
+    expect(validator.getIssues()).toEqual(whole);
   });
 });

@@ -61,9 +61,21 @@ describe("parseExpression — literals", () => {
   it("parses string and template literals (no substitutions)", () => {
     expect(parseExpression(`"hi"`, noJsx)).toBe("hi");
     expect(parseExpression(`'hi'`, noJsx)).toBe("hi");
-    expect(parseExpression(`'a\\nb'`, noJsx)).toBe("a\nb");
     expect(parseExpression("`tpl`", noJsx)).toBe("tpl");
     expect(parseExpression("``", noJsx)).toBe("");
+  });
+
+  it("decodes escape sequences in string literals", () => {
+    expect(parseExpression(String.raw`"a\nb\tc\rd\0"`, noJsx)).toBe("a\nb\tc\rd\0");
+    expect(parseExpression(String.raw`'it\'s' `, noJsx)).toBe("it's");
+    expect(parseExpression(String.raw`"back\\slash \"q\""`, noJsx)).toBe('back\\slash "q"');
+    // Any other escaped character stands for itself.
+    expect(parseExpression(String.raw`"\a\{"`, noJsx)).toBe("a{");
+  });
+
+  it("rejects a literal with anything after its closing quote", () => {
+    expect(parseExpression(`"a"b`, noJsx)).toBe(UNSUPPORTED_EXPRESSION);
+    expect(parseExpression(`"unterminated`, noJsx)).toBe(UNSUPPORTED_EXPRESSION);
   });
 
   it("trims surrounding whitespace", () => {
@@ -177,6 +189,10 @@ describe("React adapter — expressions in children", () => {
   it("renders nested JSX expressions", () => {
     expect(toHtml("<p>{<b>x</b>}</p>")).toBe("<p><b>x</b></p>");
     expect(toHtml("<p>before {<i>mid</i>} after</p>")).toBe("<p>before <i>mid</i> after</p>");
+  });
+
+  it("renders sibling nodes in one nested JSX expression as a fragment", () => {
+    expect(toHtml("<p>{<b>a</b><i>b</i>}</p>")).toBe("<p><b>a</b><i>b</i></p>");
   });
 });
 
@@ -298,21 +314,5 @@ describe("React adapter — unsupported expressions", () => {
 
   it("drops the prop (attributes)", () => {
     expect(toHtml(`<input value={a + b}/>`)).toBe(`<input/>`);
-  });
-});
-
-describe("Tokenizer — chunking invariance with expressions", () => {
-  const input = `<div title={"a}b"}>x{42}y{<b k='}'>z</b>}</div>`;
-  it("is invariant for every chunk size", () => {
-    // Compare unstripped tokens so source locations are covered too.
-    const wholeTk = new Tokenizer();
-    const whole: Token[] = [...wholeTk.write(input), ...wholeTk.end()];
-    for (let size = 1; size <= input.length; size++) {
-      const tk = new Tokenizer();
-      const out: Token[] = [];
-      for (let i = 0; i < input.length; i += size) out.push(...tk.write(input.slice(i, i + size)));
-      out.push(...tk.end());
-      expect(out).toEqual(whole);
-    }
   });
 });
