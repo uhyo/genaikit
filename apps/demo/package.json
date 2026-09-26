@@ -2,7 +2,7 @@
   "name": "ingenui-demo",
   "version": "0.0.0",
   "private": true,
-  "description": "Interactive demo for @ingenui/incremental-jsx-parser: stream JSX into a live React tree.",
+  "description": "Interactive demo for ingenui and @ingenui/incremental-jsx-parser: stream Markdown + UI (through a Worker running the ingenui server side) or JSX into a live React tree.",
   "type": "module",
   "scripts": {
     "dev": "vite",

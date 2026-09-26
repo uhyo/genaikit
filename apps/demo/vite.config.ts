@@ -1,6 +1,8 @@
+import type { IncomingMessage } from "node:http";
 import { fileURLToPath } from "node:url";
 
 import { defineConfig } from "vite";
+import type { Plugin } from "vite";
 
 // Resolve `@ingenui/incremental-jsx-parser` (and its subpaths) straight to the library
 // source, so the demo always reflects the code in
@@ -9,8 +11,55 @@ import { defineConfig } from "vite";
 // handles `.tsx` using the `jsx: "react-jsx"` setting from `tsconfig.json`.
 const fromHere = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
+/** A Node request as a Fetch API `Request`. */
+async function toRequest(req: IncomingMessage): Promise<Request> {
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (value !== undefined) headers.set(key, Array.isArray(value) ? value.join(", ") : value);
+  }
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(chunk as Buffer);
+  return new Request(new URL(req.url ?? "/", "http://localhost"), {
+    method: req.method,
+    headers,
+    body: chunks.length > 0 ? Buffer.concat(chunks) : undefined,
+  });
+}
+
+/**
+ * Serve the Worker's `/api/*` routes (`worker/index.ts`) from `vite dev`, so
+ * the demo's server side runs without wrangler. The module goes through
+ * Vite's SSR loader, so the workspace aliases below apply to it too.
+ */
+function workerApi(): Plugin {
+  return {
+    name: "demo-worker-api",
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        if (!req.url?.startsWith("/api/")) return next();
+        try {
+          const worker = (await server.ssrLoadModule("/worker/index.ts")) as {
+            default: { fetch(request: Request): Promise<Response> };
+          };
+          const response = await worker.default.fetch(await toRequest(req));
+          res.statusCode = response.status;
+          response.headers.forEach((value, key) => res.setHeader(key, value));
+          if (response.body) {
+            // Forward chunk by chunk, so streaming reaches the browser live.
+            for await (const chunk of response.body) res.write(chunk);
+          }
+          res.end();
+        } catch (error) {
+          next(error);
+        }
+      });
+    },
+  };
+}
+
 export default defineConfig({
   root: fromHere("."),
+  plugins: [workerApi()],
   resolve: {
     alias: {
       "@ingenui/incremental-jsx-parser/react": fromHere(
@@ -23,6 +72,8 @@ export default defineConfig({
         "../../packages/incremental-jsx-parser/src/index.ts",
       ),
       "ingenui/react": fromHere("../../packages/ingenui/src/react.ts"),
+      "ingenui/schema": fromHere("../../packages/ingenui/src/schema.ts"),
+      "ingenui/server": fromHere("../../packages/ingenui/src/server.ts"),
       ingenui: fromHere("../../packages/ingenui/src/index.ts"),
     },
     // The aliased library source imports `react`/`react-dom` too.

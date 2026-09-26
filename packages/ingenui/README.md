@@ -40,6 +40,11 @@ Let me know if you have questions!
   props, and a built-in Markdown renderer that never renders raw HTML.
 - **Prompt included** — `formatGenUiPrompt` tells the model the message
   format, the actions, and the exact JSX it may emit.
+- **Server and client** — one data-only schema, shared by both sides. The
+  server (`ingenui/server`, React-free) builds the prompt and validates the
+  model's stream as it passes through, catching the same issues the client
+  will, as they arrive. The client binds type-checked components to the
+  schema. RSC is not required.
 
 > **Status:** early development. The API is implemented and tested, but may
 > still change before a stable release.
@@ -53,54 +58,64 @@ npm install ingenui
 
 ## Usage
 
-Render a streamed message:
+Declare the schema once, as plain data shared by the server and the client:
+
+```ts
+// genui-schema.ts
+import { defineGenUiSchema } from "ingenui/schema";
+
+export const schema = defineGenUiSchema({
+  components: { Card: { props: { title: "string" }, description: "A titled panel." } },
+  elements: { div: true, p: true, button: true },
+  actions: { subscribe: { description: "Start a subscription." } },
+});
+```
+
+On the server, prompt the model and validate its stream on the way to the
+client:
+
+```ts
+import { formatGenUiPrompt, pipeGenUi } from "ingenui/server";
+
+const system = `You are a helpful assistant …\n\n${formatGenUiPrompt(schema)}`;
+const pipe = pipeGenUi(await callTheModel(system), schema, { onIssue: console.warn });
+return new Response(pipe.stream);
+```
+
+On the client, bind the components and render the streamed message:
 
 ```tsx
+import { bindGenUi } from "ingenui";
 import { useGenUiMessage } from "ingenui/react";
+
+const genUi = bindGenUi(schema, { components: { Card } }); // type-checked against the schema
 
 function AssistantMessage({ stream }: { stream: ReadableStream<Uint8Array> }) {
   const { node, message } = useGenUiMessage(stream, {
-    components: { Card },
-    actions: {
-      subscribe: () => {/* optional local handling */},
-    },
+    ...genUi,
     onAction: (event) => {
-      // The canonical next request for the model:
-      sendToModel(event.message); // "The `actions.subscribe` action was fired by the user."
+      // Send `event.name` back; the server turns it into the canonical next
+      // request ("The `actions.subscribe` action was fired by the user.").
+      sendAction(event.name);
     },
     Pending: () => <span className="shimmer" />,
   });
-
-  // After the stream completes, report problems back to the model:
-  useEffect(() => {
-    message.done.then(() => {
-      const report = message.getIssueReport();
-      if (report !== null) sendToModel(report);
-    });
-  }, [message]);
-
   return <div className="message">{node}</div>;
 }
 ```
 
-And tell the model how to write one:
-
-```ts
-import { formatGenUiPrompt } from "ingenui";
-
-const systemPrompt = `You are a helpful assistant …
-
-${formatGenUiPrompt({
-  components: { Card: { component: Card, props: { title: "string" } } },
-  elements: { div: true, p: true, button: true },
-  actions: { subscribe: true },
-})}`;
-```
+A client-only setup works too: pass `components`, `actions`, … directly to
+`useGenUiMessage`, and send `message.getIssueReport()` back to the model
+after `message.done`.
 
 ## Documentation
 
 - [API reference](./docs/api.md) — `createGenUiMessage`, options,
-  `useGenUiMessage` / `useGenUiNode`, and `formatGenUiPrompt`.
+  `useGenUiMessage` / `useGenUiNode`, `formatGenUiPrompt`,
+  `defineGenUiSchema` / `bindGenUi`, and `ingenui/server`.
+- [Server and client](./docs/server.md) — the shared schema, server-side
+  validation (`pipeGenUi`), building the next request on the server, and
+  sharing patterns (plain modules, RSC).
 - [The `actions` convention](./docs/actions.md) — declared and model-defined
   actions, and `dynamicActions`.
 - [Issues and error containment](./docs/issues.md) — the issue kinds, the

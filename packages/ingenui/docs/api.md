@@ -4,8 +4,11 @@
 - [Options](#options)
 - [`useGenUiMessage` / `useGenUiNode`](#usegenuimessagesource-options--ingenuireact) — React hooks
 - [`formatGenUiPrompt`](#formatgenuipromptoptions--ingenui) — the system prompt
+- [`defineGenUiSchema` / `bindGenUi`](#definegenuischemaschema--ingenuischema) — the schema shared with the server
+- [`ingenui/server`](#ingenuiserver) — the React-free server side
 
-See also: [the `actions` convention](./actions.md),
+See also: [server and client: the shared schema](./server.md),
+[the `actions` convention](./actions.md),
 [issues and error containment](./issues.md), and
 [Markdown and streaming](./markdown.md).
 
@@ -41,12 +44,17 @@ They are forwarded to every `ui+jsx` block's parser. In addition:
 
 | Option           | Type                                  | Description |
 | ---------------- | ------------------------------------- | ----------- |
-| `actions`        | `Record<string, ActionHandler \| true>` | The actions the model may use; exposed as the predefined variable `actions`, each entry typed `"function"`. `true` declares an action with no local handler. See [the `actions` convention](./actions.md). |
+| `actions`        | `Record<string, ActionHandler \| true \| { description? }>` | The actions the model may use; exposed as the predefined variable `actions`, each entry typed `"function"`. `true` (or a `{ description }` for the prompt) declares an action with no local handler. See [the `actions` convention](./actions.md). |
 | `dynamicActions` | `boolean`                             | Let the model define its own actions by referencing them: any `actions.<name>` resolves; undeclared names are notify-only (`declared: false`). **Default `true`** — pass `false` to keep the action vocabulary host-owned. |
 | `onAction`       | `(event: ActionEvent) => void`        | Fired when the user triggers an action. `event.message` is the canonical next-request text; `event.declared` distinguishes host-declared from model-defined actions. |
 | `onIssue`        | `(issue: GenUiIssue) => void`         | Fired for every issue as it is found (issues also accumulate on the message). See [issues](./issues.md). |
 | `renderMarkdown` | `(markdown: string, context: { streaming: boolean }) => ReactNode` | Replace the built-in [Markdown renderer](./markdown.md). `streaming` is `true` while the region holds the stream's frontier. |
 | `renderUiError`  | `(blockIndex: number) => ReactNode`   | Rendered in place of a block whose UI crashed (default: nothing — the block is hidden). |
+
+With a [shared schema](./server.md), the parse-affecting options (`elements`,
+`components`, `variables`, `variableTypes`, `actions`, `dynamicActions`,
+`mismatchedTag`) come from [`bindGenUi`](#bindgenuischema-bindings--ingenui)
+instead. Spread its result and add the client-only ones.
 
 `onJsxError` is not an option here — the parser's structured errors flow into
 the issue channel instead (`onIssue` / `getIssues`).
@@ -74,7 +82,10 @@ the message format: how to open a `ui+jsx` fence, which actions exist (and,
 unless `dynamicActions: false`, that it may invent action names), plus the
 parser's `formatPromptContract` — the exact JSX subset, allowed
 elements/components/props with their types, and predefined variables. Pass
-it the same schema options you pass to `createGenUiMessage`:
+it a [`GenUiSchema`](#definegenuischemaschema--ingenuischema) (the usual
+server-side call, also exported from `ingenui/server`), or the same schema
+options you pass to `createGenUiMessage`. Component and action
+`description`s are included in the prompt:
 
 ```ts
 import { formatGenUiPrompt } from "ingenui";
@@ -87,3 +98,51 @@ ${formatGenUiPrompt({
   actions: { subscribe: true },
 })}`;
 ```
+
+## `defineGenUiSchema(schema)` — `ingenui/schema`
+
+Declares the data-only **GenUI schema** shared by the server and the client:
+`elements`, `components` (name → `{ props?, description? }` or `true`),
+`variableTypes`, `actions` (name → `true` or `{ description? }`),
+`dynamicActions`, and `mismatchedTag`. It is an identity function at
+runtime; at the type level it keeps the literal shape for `bindGenUi`. The
+entry is React-free. See [server and client](./server.md#the-schema--ingenuischema).
+
+## `bindGenUi(schema, bindings)` — `ingenui`
+
+Binds the implementations to a schema and returns the schema-derived
+`createGenUiMessage` options:
+
+```ts
+const genUi = bindGenUi(schema, {
+  components: { Card, Chart }, // required: one per declared component
+  variables: { user }, // required: one per declared variable, of its declared type
+  actions: { subscribe: () => openCheckout() }, // optional handlers for declared actions
+});
+useGenUiMessage(stream, { ...genUi, Pending: Shimmer, onAction });
+```
+
+- **Type checks:** components must accept the props the schema declares, all
+  of them optional (the model may omit any), plus `children`. Variable values
+  must match their declared types. `InferSchemaType<T>` /
+  `InferComponentProps<D>` expose the mapping.
+- **Runtime checks:** throws when a declared component or variable has no
+  binding, or when a component, variable or action handler is not declared
+  in the schema.
+
+## `ingenui/server`
+
+The React-free server side. See [server and client](./server.md#the-server--ingenuiserver).
+
+| Export | Description |
+| ------ | ----------- |
+| `formatGenUiPrompt(schema)` | The system prompt, as above. |
+| `pipeGenUi(source, schema, { onIssue? })` | Validates a stream while passing it through. Returns `{ stream, done, getIssues, getIssueReport }`: `stream` is a UTF-8 byte stream ready to be a `Response` body, and `done` resolves with the issues at the end. |
+| `createGenUiValidator(schema, { onIssue? })` | A push-based validator (`write`, `end`, `getIssues`, `getIssueReport`). |
+| `validateGenUiMessage(text, schema)` | Validates a complete message and returns its issues. |
+| `resolveGenUiAction(schema, name)` | Resolves an action name sent by the client to `{ name, reference, message, declared }`, or `null` if the model could not have wired it. |
+| `formatIssueReport(issues)` / `formatActionMessage(name)` / `formatJsxError(event)` | Feedback formatting, as on the client. |
+
+For the same text and schema, the server reports exactly the `jsx-error` and
+`unclosed-fence` issues the client does. `render-error` issues are
+client-only.

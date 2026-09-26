@@ -15,12 +15,18 @@ A **pnpm monorepo** hosting a Generative UI toolchain. Workspace layout:
     framework** wrapping the parser: streams AI-generated **Markdown** where
     ```` ```ui+jsx ```` code fences render as live UI, with the `actions`
     convention (UI → next AI request) and structured issue feedback for the
-    model.
+    model. Covers both the client and the server: a data-only schema shared
+    by both sides, and a React-free `ingenui/server` that prompts the model
+    and validates its stream as it passes through.
 - `apps/*` — private, unpublished apps. Currently:
   - [`apps/demo`](./apps/demo) — Vite playground with two modes: streams a
     ingenui Markdown message (live UI blocks, action log, feedback report)
-    or raw JSX into the live tree (deployable to Cloudflare Workers). Both
-    workspace libraries resolve to source via aliases — no build step.
+    or raw JSX into the live tree. Deployed as a Cloudflare Worker whose
+    `/api/*` routes (`worker/index.ts`) are the ingenui server side: a
+    simulated model streamed through `pipeGenUi`, plus the server-built
+    prompt and next request. In `vite dev` a middleware serves the same
+    handler. Both workspace libraries resolve to source via aliases (Vite,
+    tsconfig, wrangler), so there is no build step.
 
 Per-package docs: the parser's original goal is
 [`packages/incremental-jsx-parser/GOAL.md`](./packages/incremental-jsx-parser/GOAL.md),
@@ -114,13 +120,25 @@ are relative to `packages/ingenui/`:
 | `src/issues.ts` | `GenUiIssue` union (`jsx-error` / `render-error` / `unclosed-fence`, all per `blockIndex`) + `formatIssueReport` (feedback text for the model). |
 | `src/boundary.tsx` | Per-block error boundary; `resetKey` bumps on each parser update so a crashed block retries as the stream grows. |
 | `src/message.tsx` | `createGenUiMessage`: pumps the source, drives the splitter, owns segments (cached markdown regions + per-block parsers in boundaries), collects issues, exposes a `useSyncExternalStore`-shaped store. |
-| `src/prompt.ts` | `formatGenUiPrompt`: message format + actions + the parser's `formatPromptContract`. |
-| `src/index.ts` / `src/react.ts` | Entries: `.` (store + helpers) and `./react` (`useGenUiMessage`, `useGenUiNode`). |
+| `src/prompt.ts` | `formatGenUiPrompt`: message format + actions (with descriptions) + the parser's `formatPromptContract`. Takes a `GenUiSchema` or the client options. |
+| `src/schema.ts` | `./schema` entry: `GenUiSchema`, the parse-affecting options as plain data (elements, component prop catalogs + descriptions, `variableTypes`, actions, `dynamicActions`, `mismatchedTag`), + `defineGenUiSchema` (identity; keeps literal types). Shared by server and client. |
+| `src/bind.ts` | `bindGenUi(schema, bindings)`: attaches components / variable values / action handlers, returning `createGenUiMessage` options. Type-checks the bindings (`InferSchemaType` / `InferComponentProps`: declared props all optional + `children`) and throws on missing or undeclared bindings. |
+| `src/validator.ts` | `createGenUiValidator` / `validateGenUiMessage`: splitter + the parser core's `createParser` per block, wired with the schema's canonical checks exactly like the client's parser. Synchronous issues. |
+| `src/pipe.ts` | `pipeGenUi`: pull-based pass-through `ReadableStream<Uint8Array>` that validates as it goes; `done` resolves with the issues. |
+| `src/index.ts` / `src/react.ts` / `src/server.ts` | Entries: `.` (store + helpers + `bindGenUi`), `./react` (`useGenUiMessage`, `useGenUiNode`), `./server` (validator, `pipeGenUi`, prompt, `resolveGenUiAction`, report formatting). |
 
 Invariants: chunk independence end-to-end (its own fuzz suite); markdown
 regions keep stable element identities once settled; a crashed UI block never
 takes down the message (boundary + retry); issues are the only error channel
-(`onJsxError` is not exposed).
+(`onJsxError` is not exposed); **server/client parity**: for the same text and
+schema, the server validator reports exactly the client's parse-time issues
+(`jsx-error` and `unclosed-fence`; only `render-error` is client-only). The
+fuzz suite checks this, so keep the validator's parser wiring in step with
+`createIncrementalJsxParser`'s. Every parse-affecting option belongs in
+`GenUiSchema`. **`./schema` and `./server` stay React-free**: they may import
+only the parser's `/core` (enforced by `server.test.ts`), so `issues.ts`,
+`prompt.ts`, `actions.ts`, `splitter.ts`, `fence.ts`, `validator.ts`, and
+`pipe.ts` must not import React or the parser's root entry.
 
 ## Development
 

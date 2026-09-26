@@ -51,7 +51,7 @@ export interface GenUiMessageOptions extends Omit<
    * (each entry declared as `"function"`), overriding any `actions` key in
    * `variables`. See `actions.ts` for the convention.
    */
-  actions?: ActionsDefinition;
+  actions?: ActionsDefinition | undefined;
   /**
    * Let the model **define its own actions** by referencing them (the
    * default): any `actions.<name>` resolves — an undeclared name becomes a
@@ -61,37 +61,37 @@ export interface GenUiMessageOptions extends Omit<
    * `actions` is then reported as an `unknown-variable` issue (and with no
    * `actions` declared, the variable does not exist at all).
    */
-  dynamicActions?: boolean;
+  dynamicActions?: boolean | undefined;
   /**
    * Called when the user triggers an action. `event.message` is the canonical
    * text to send to the model as the next request.
    */
-  onAction?: (event: ActionEvent) => void;
+  onAction?: ((event: ActionEvent) => void) | undefined;
   /**
    * Called for every issue as it is found — JSX parse errors, render crashes,
    * unclosed fences. The same issues accumulate on the message
    * (`getIssues()` / `getIssueReport()`).
    */
-  onIssue?: (issue: GenUiIssue) => void;
+  onIssue?: ((issue: GenUiIssue) => void) | undefined;
   /**
    * The channel for **unrecoverable** errors: called once if the stream
    * source fails. Content received so far stays rendered (open blocks are
    * finalized best-effort) and {@link GenUiMessage.done} rejects with the
    * same error.
    */
-  onStreamError?: (error: unknown) => void;
+  onStreamError?: ((error: unknown) => void) | undefined;
   /**
    * Replace the built-in Markdown renderer for the non-UI regions.
    * `context.streaming` is `true` while the region may still grow (it holds
    * the stream's frontier), so a renderer can show unterminated markup
    * optimistically.
    */
-  renderMarkdown?: (markdown: string, context: MarkdownRenderContext) => ReactNode;
+  renderMarkdown?: ((markdown: string, context: MarkdownRenderContext) => ReactNode) | undefined;
   /**
    * Rendered in place of a `ui+jsx` block whose UI crashed at render time
    * (default: nothing — the block is hidden).
    */
-  renderUiError?: (blockIndex: number) => ReactNode;
+  renderUiError?: ((blockIndex: number) => ReactNode) | undefined;
 }
 
 /**

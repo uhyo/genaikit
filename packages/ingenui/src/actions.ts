@@ -21,16 +21,27 @@
  * and type-infers as `"function"`.
  */
 
-import type { SchemaType } from "@ingenui/incremental-jsx-parser";
+import type { SchemaType } from "@ingenui/incremental-jsx-parser/core";
+import { FORBIDDEN_SEGMENTS } from "@ingenui/incremental-jsx-parser/core";
 
 /** A host-side handler run (in addition to `onAction`) when an action fires. */
 export type ActionHandler = (...args: readonly unknown[]) => void;
 
 /**
- * The actions the model may use: action name -> handler, or `true` for an
- * action with no local handler (it still fires `onAction`).
+ * The data-only declaration of an action (as in a `GenUiSchema`): no handler,
+ * just what the model is told about it.
  */
-export type ActionsDefinition = Readonly<Record<string, ActionHandler | true>>;
+export interface ActionDefinition {
+  /** What the action does, shown to the model in the prompt. */
+  readonly description?: string | undefined;
+}
+
+/**
+ * The actions the model may use: action name -> handler, `true`, or an
+ * {@link ActionDefinition} — the latter two declare an action with no local
+ * handler (it still fires `onAction`).
+ */
+export type ActionsDefinition = Readonly<Record<string, ActionHandler | true | ActionDefinition>>;
 
 /** Emitted when the user triggers an action in AI-generated UI. */
 export interface ActionEvent {
@@ -88,7 +99,11 @@ export function createActionsVariable(
   onAction: ActionListener | undefined,
   dynamic = false,
 ): ActionsVariable {
-  const wrap = (name: string, handler: ActionHandler | true, declared: boolean): ActionHandler => {
+  const wrap = (
+    name: string,
+    handler: ActionsDefinition[string],
+    declared: boolean,
+  ): ActionHandler => {
     return (...args) => {
       onAction?.({
         name,
@@ -156,4 +171,44 @@ export function withActionsVariable<T extends ActionsOptions>(
     variables: { ...options.variables, actions: actionsVariable.values },
     variableTypes: { ...options.variableTypes, actions: actionsVariable.type },
   };
+}
+
+/** A fired action, resolved against the declared actions (see {@link resolveAction}). */
+export interface ResolvedAction {
+  /** The action's name (`"submit"`). */
+  name: string;
+  /** The reference as the model writes it (`"actions.submit"`). */
+  reference: string;
+  /** The canonical next-request text (see {@link formatActionMessage}). */
+  message: string;
+  /** `true` for a declared action, `false` for a model-defined (dynamic) one. */
+  declared: boolean;
+}
+
+const ACTION_NAME_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
+/**
+ * Resolve an action **name** reported by a client (e.g. `{ action: "submit" }`
+ * in the next request) against the declared actions — the server-side
+ * counterpart of the `actions` variable. Returns `null` when the name is not
+ * an action the model could have wired: undeclared with `dynamicActions:
+ * false`, or (with dynamic actions) not a valid `actions.<name>` member —
+ * non-identifiers, the forbidden segments, and inherited `Object.prototype`
+ * members (`toString` &c.) are never actions.
+ *
+ * Build the next request from the returned `message` instead of trusting
+ * client-supplied text.
+ */
+export function resolveAction(
+  options: Pick<ActionsOptions, "actions" | "dynamicActions">,
+  name: string,
+): ResolvedAction | null {
+  const declared = options.actions !== undefined && Object.hasOwn(options.actions, name);
+  if (!declared) {
+    if (options.dynamicActions === false) return null;
+    if (!ACTION_NAME_RE.test(name) || FORBIDDEN_SEGMENTS.has(name) || name in Object.prototype) {
+      return null;
+    }
+  }
+  return { name, reference: `actions.${name}`, message: formatActionMessage(name), declared };
 }

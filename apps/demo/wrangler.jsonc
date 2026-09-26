@@ -2,11 +2,20 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "ingenui-demo",
   "compatibility_date": "2026-06-20",
-  // Assets-only Worker: no `main` script, Cloudflare just serves the built SPA
-  // from `./dist`. `single-page-application` rewrites unknown paths to
-  // `index.html` so client-side routing / deep links don't 404.
+  // The Worker script serves the demo's server side (`/api/*`); everything
+  // else is the built SPA in `./dist`, served straight from the assets.
+  // `single-page-application` rewrites unknown paths to `index.html` so
+  // client-side routing / deep links don't 404.
+  "main": "./worker/index.ts",
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"],
+  },
+  // Like the Vite aliases: bundle the workspace libraries from source.
+  "alias": {
+    "@ingenui/incremental-jsx-parser/core": "../../packages/incremental-jsx-parser/src/core.ts",
+    "ingenui/schema": "../../packages/ingenui/src/schema.ts",
+    "ingenui/server": "../../packages/ingenui/src/server.ts",
   },
 }

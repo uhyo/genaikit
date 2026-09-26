@@ -214,6 +214,14 @@ describe("checkProp — typed prop declarations", () => {
     expect(checkProp("Card", "bogus", "x", options)).not.toBeNull();
   });
 
+  it("names the allowed props in the rejection reason", () => {
+    expect(checkProp("Card", "bogus", "x", options)).toBe(
+      "not an allowed prop for <Card> (allowed: title, count, onAction)",
+    );
+    const empty: SchemaOptions = { components: { Box: { props: {} } } };
+    expect(checkProp("Box", "tone", "x", empty)).toBe("<Box> takes no props");
+  });
+
   it("leaves undeclared components as the author's contract", () => {
     expect(checkProp("Free", "anything", "goes", options)).toBeNull();
     expect(checkProp("Unknown", "anything", "goes", options)).toBeNull();
@@ -406,6 +414,23 @@ describe("formatPromptContract", () => {
     // Declared types win over the value-derived shape.
     expect(contract).toContain("- {actions} — object with fields: confirm (function)");
     expect(contract).toContain("- {theme} — object with fields: card (object)");
+  });
+
+  it("describes components with their declared descriptions", () => {
+    const contract = formatPromptContract({
+      components: {
+        Card: {
+          props: { title: "string" },
+          description: "A titled panel.\n  Wrap related content.",
+        },
+        Note: { description: "A short aside." },
+      },
+    });
+    expect(contract).toContain(
+      "- <Card> — allowed props: title (string)\n  A titled panel. Wrap related content.",
+    );
+    // A description alone makes a spec: any props, but still described.
+    expect(contract).toContain("- <Note>\n  A short aside.");
   });
 
   it("falls back to sensible wording when nothing is configured", () => {

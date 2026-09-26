@@ -61,6 +61,14 @@ createIncrementalJsxParser(stream, {
 With a declaration, every parsed prop on that component — string attributes
 and `{ }` expressions alike — is validated the same way as element props.
 
+A spec may also carry a `description` — what the component is for. It has no
+effect on validation or rendering; [`formatPromptContract`](#the-schema-as-a-prompt-contract-formatpromptcontract)
+lists it under the component so the model knows when to use it:
+
+```ts
+Card: { component: Card, props: { title: "string" }, description: "A titled panel for related content." },
+```
+
 ## Variables
 
 Variables get their types inferred from the `variables` values, and

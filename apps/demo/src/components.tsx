@@ -8,6 +8,9 @@
 import { createContext, useContext } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { useIsElementComplete } from "@ingenui/incremental-jsx-parser/react";
+import { bindGenUi } from "ingenui";
+
+import { demoSchema } from "./genui-schema";
 
 interface WithChildren {
   children?: ReactNode;
@@ -118,8 +121,7 @@ function Callout({ tone = "info", children }: WithChildren & { tone?: string }) 
   return <div className={`ui-callout ui-callout--${tone}`}>{children}</div>;
 }
 
-/** Passed to the parser as both the renderer and the allowlist. */
-export const demoComponents: Record<string, ComponentType<never>> = {
+const implementations = {
   Card,
   CardHeader,
   CardBody,
@@ -133,6 +135,16 @@ export const demoComponents: Record<string, ComponentType<never>> = {
   List,
   Item,
   Callout,
-} as Record<string, ComponentType<never>>;
+};
+
+/**
+ * ingenui mode: the implementations bound to the shared schema. `bindGenUi`
+ * type-checks each component's props against what the schema lets the model
+ * pass (and throws if the catalog and the schema disagree).
+ */
+export const genUi = bindGenUi(demoSchema, { components: implementations });
+
+/** Parser mode: passed to the parser as both the renderer and the allowlist. */
+export const demoComponents = implementations as Record<string, ComponentType<never>>;
 
 export const componentNames = Object.keys(demoComponents);

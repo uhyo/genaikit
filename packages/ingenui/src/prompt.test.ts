@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import { bindGenUi } from "./bind";
 import { formatGenUiPrompt } from "./prompt";
+import { defineGenUiSchema } from "./schema";
 
 describe("formatGenUiPrompt", () => {
   it("describes the message format", () => {
@@ -72,5 +74,45 @@ describe("formatGenUiPrompt — dynamic actions", () => {
     const prompt = formatGenUiPrompt({ dynamicActions: false });
     expect(prompt).not.toContain("## Actions");
     expect(prompt).not.toContain("- {actions} —");
+  });
+});
+
+describe("formatGenUiPrompt — from a GenUiSchema", () => {
+  const schema = defineGenUiSchema({
+    elements: { div: true },
+    components: {
+      Card: { props: { title: "string" }, description: "A titled panel." },
+      Free: true,
+    },
+    variableTypes: { user: { name: "string" } },
+    actions: { subscribe: { description: "Start a subscription." }, cancel: true },
+  });
+
+  it("describes components, variables, and actions from the data-only schema", () => {
+    const prompt = formatGenUiPrompt(schema);
+    expect(prompt).toContain("- <Card> — allowed props: title (string)\n  A titled panel.");
+    expect(prompt).toContain("- <Free>");
+    expect(prompt).toContain("- {user} — object with fields: name (string)");
+    expect(prompt).toContain(
+      "- {actions} — object with fields: subscribe (function), cancel (function)",
+    );
+  });
+
+  it("lists actions with their descriptions", () => {
+    const prompt = formatGenUiPrompt(schema);
+    expect(prompt).toContain(
+      "- Available actions:\n  - `actions.subscribe`: Start a subscription.\n  - `actions.cancel`\n",
+    );
+    expect(prompt).toContain("onClick={actions.subscribe}");
+  });
+
+  it("matches the prompt built from the bound client options", () => {
+    const Card = () => null;
+    const Free = () => null;
+    const bound = bindGenUi(schema, {
+      components: { Card, Free },
+      variables: { user: { name: "u" } },
+    });
+    expect(formatGenUiPrompt(bound)).toBe(formatGenUiPrompt(schema));
   });
 });
