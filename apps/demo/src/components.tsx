@@ -5,14 +5,35 @@
  * AI-generated output can only instantiate components you explicitly list here —
  * anything else degrades to the `<Pending />` frontier instead of rendering.
  */
+import { createContext, useContext } from "react";
 import type { ComponentType, ReactNode } from "react";
+import { useIsElementComplete } from "@ingenui/incremental-jsx-parser/react";
 
 interface WithChildren {
   children?: ReactNode;
 }
 
+/**
+ * Set by compact inline components (Badge, Button) so the frontier inside
+ * them renders nothing: a full-width shimmer would make them longer than
+ * they will finally be.
+ */
+const HidePendingContext = createContext(false);
+
+/** Frontier placeholder: a shimmering block shown wherever content is pending. */
+export function Shimmer() {
+  if (useContext(HidePendingContext)) return null;
+  return <span className="shimmer" aria-label="loading" />;
+}
+
 function Card({ children }: WithChildren) {
-  return <div className="ui-card">{children}</div>;
+  // Rainbow border while the card's children are still streaming in.
+  const complete = useIsElementComplete();
+  return (
+    <div className={`ui-card ${complete ? "" : "ui-card--pending"}`} aria-busy={!complete}>
+      {children}
+    </div>
+  );
 }
 
 function CardHeader({ children }: WithChildren) {
@@ -32,7 +53,12 @@ function Text({ children }: WithChildren) {
 }
 
 function Badge({ tone = "neutral", children }: WithChildren & { tone?: string }) {
-  return <span className={`ui-badge ui-badge--${tone}`}>{children}</span>;
+  const complete = useIsElementComplete();
+  return (
+    <span className={`ui-badge ui-badge--${tone} ${complete ? "" : "ui-badge--pending"}`}>
+      <HidePendingContext value={!complete}>{children}</HidePendingContext>
+    </span>
+  );
 }
 
 function Button({
@@ -43,9 +69,18 @@ function Button({
   // `onClick` is forwarded so streamed UI can wire `actions.*` references
   // (the parser only ever passes functions resolved from predefined
   // variables here — string handlers are rejected by the schema).
+  // Disabled until its label has fully arrived, so a half-streamed button
+  // can't be clicked.
+  const complete = useIsElementComplete();
   return (
-    <button className={`ui-button ui-button--${variant}`} type="button" onClick={onClick}>
-      {children}
+    <button
+      className={`ui-button ui-button--${variant}`}
+      type="button"
+      onClick={onClick}
+      disabled={!complete}
+      aria-busy={!complete}
+    >
+      <HidePendingContext value={!complete}>{children}</HidePendingContext>
     </button>
   );
 }

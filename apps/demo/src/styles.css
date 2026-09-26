@@ -426,6 +426,7 @@ code {
 
 /* ---- demo UI components ---- */
 .ui-card {
+  position: relative;
   background: linear-gradient(180deg, #182040, #141a2e);
   background-color: #161d33;
   border: 1px solid var(--border);
@@ -435,6 +436,60 @@ code {
   flex-direction: column;
   gap: 14px;
   box-shadow: 0 14px 40px -24px rgba(0, 0, 0, 0.8);
+  transition: box-shadow 0.6s ease;
+}
+
+/*
+ * Rainbow border while the card is still streaming (useIsElementComplete).
+ * A masked overlay rather than the real border, so nothing shifts when it
+ * appears or goes. It always exists and fades out once the card completes;
+ * the rotation pauses (instead of stopping) so the fade doesn't jump.
+ */
+@property --rainbow-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.ui-card::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  padding: 2px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--rainbow-angle),
+    #ff6b6b,
+    #f0b429,
+    #f9f871,
+    #36c98f,
+    #6ea8fe,
+    #8b7bff,
+    #e879f9,
+    #ff6b6b
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.6s ease;
+  animation: rainbow-spin 2.4s linear infinite paused;
+}
+
+.ui-card--pending {
+  box-shadow:
+    0 14px 40px -24px rgba(0, 0, 0, 0.8),
+    0 0 28px -10px rgba(139, 123, 255, 0.55);
+}
+
+.ui-card--pending::before {
+  opacity: 1;
+  animation-play-state: running;
 }
 
 .ui-card__header {
@@ -493,6 +548,17 @@ code {
   color: var(--muted);
 }
 
+/* In a column (card / card body), keep the pill at its content width. */
+.ui-card > .ui-badge,
+.ui-card__body > .ui-badge {
+  align-self: flex-start;
+}
+
+/* Still streaming: the frontier inside is hidden, so pulse the badge itself. */
+.ui-badge--pending {
+  animation: soft-pulse 1.2s ease-in-out infinite;
+}
+
 .ui-button {
   align-self: flex-start;
   font-weight: 700;
@@ -514,6 +580,12 @@ code {
   color: var(--text);
 }
 
+/* Disabled only while its label is still streaming in. */
+.ui-button:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
 .ui-avatar {
   display: inline-flex;
   align-items: center;
@@ -532,6 +604,11 @@ code {
   gap: 16px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+/* Side-by-side cards share a top edge, so one growing doesn't shift the other. */
+.ui-row > .ui-card {
+  align-self: stretch;
 }
 
 .ui-stat {
@@ -574,6 +651,26 @@ code {
 .ui-callout--info {
   border-color: rgba(110, 168, 254, 0.4);
   background: rgba(110, 168, 254, 0.08);
+}
+
+@keyframes rainbow-spin {
+  to {
+    --rainbow-angle: 360deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-card::before,
+  .ui-badge--pending,
+  .shimmer {
+    animation: none;
+  }
+}
+
+@keyframes soft-pulse {
+  50% {
+    opacity: 0.55;
+  }
 }
 
 @keyframes shimmer {
