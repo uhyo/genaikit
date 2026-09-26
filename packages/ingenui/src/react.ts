@@ -14,6 +14,8 @@ import { createGenUiMessage } from "./message";
 import type { JsxStreamSource } from "@ingenui/incremental-jsx-parser/core";
 
 export type { GenUiMessage, GenUiMessageOptions } from "./message";
+// Re-exported for catalog components: has this component finished streaming?
+export { useIsElementComplete } from "@ingenui/incremental-jsx-parser/react";
 
 /** What {@link useGenUiMessage} returns. */
 export interface GenUiMessageHook {

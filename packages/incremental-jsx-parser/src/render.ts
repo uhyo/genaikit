@@ -10,7 +10,7 @@
  * This module depends on React; the `/core` entry never imports it.
  */
 
-import { createElement, Fragment } from "react";
+import { createContext, createElement, Fragment, useContext } from "react";
 import type { ComponentType, ReactNode } from "react";
 
 import { isComponentName, resolveVariablePath, UNSUPPORTED_EXPRESSION } from "./ast";
@@ -127,6 +127,29 @@ export function Pending(): ReactNode {
   return null;
 }
 
+/**
+ * Whether the enclosing component element has finished streaming. The
+ * renderer wraps every resolved component element in a provider; host
+ * elements get none (they have no way to read it).
+ */
+const ElementCompleteContext = createContext(true);
+
+/**
+ * Inside a component rendered by the parser: `false` while the component's
+ * element is still open on the stream (its children may still grow), `true`
+ * once its closing tag has arrived — or it was self-closing, auto-closed by
+ * mismatch recovery, or auto-closed at the end of the stream. Its props are
+ * final from the first render either way: an element only appears once its
+ * opening tag is complete.
+ *
+ * Reads the nearest parser-rendered component element, so a component used
+ * internally by another one sees its host's status. Outside any
+ * parser-rendered tree it returns `true`.
+ */
+export function useIsElementComplete(): boolean {
+  return useContext(ElementCompleteContext);
+}
+
 type Resolved =
   | { kind: "host"; tag: string }
   | { kind: "component"; type: ComponentType<never> }
@@ -196,9 +219,19 @@ export function createRenderer(options: RenderOptions = {}): Renderer {
       props[name] = renderValue(value);
     }
     const children = node.children.map(renderNode);
-    return resolved.kind === "host"
-      ? createElement(resolved.tag, props, ...children)
-      : createElement(resolved.type as ComponentType<Record<string, unknown>>, props, ...children);
+    if (resolved.kind === "host") return createElement(resolved.tag, props, ...children);
+    // Always wrap (even once closed) so completion updates the provider value
+    // instead of changing the element type, which would remount the component.
+    const { key, ...componentProps } = props;
+    return createElement(
+      ElementCompleteContext.Provider,
+      { key: key as number, value: node.status === "closed" },
+      createElement(
+        resolved.type as ComponentType<Record<string, unknown>>,
+        componentProps,
+        ...children,
+      ),
+    );
   }
 
   function renderValue(value: unknown): ReactNode {

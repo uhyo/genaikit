@@ -4,6 +4,7 @@
 - [`createIncrementalJsxParser`](#createincrementaljsxparsersource-options--ingenuiincremental-jsx-parser) — React store
 - [Options](#options)
 - [Components and variables as allowlists](#components-and-variables-as-allowlists)
+- [`useIsElementComplete`](#useiselementcomplete--ingenuiincremental-jsx-parser) — has this component finished streaming?
 
 See also: [the schema](./schema.md), [error handling](./errors.md), and
 [the framework-agnostic core](./core.md).
@@ -73,3 +74,33 @@ and `prototype` are excluded from the syntax at any path position (they parse
 as an unsupported expression), and root names must be **own** properties of
 the map, so inherited `Object.prototype` members like `{toString}` never
 resolve.
+
+## `useIsElementComplete()` — `@ingenui/incremental-jsx-parser`
+
+A hook for the components in your catalog: `false` while the component's
+element is still open on the stream (its children may still grow), `true`
+once it is settled — its closing tag arrived, it was self-closing, or it was
+auto-closed (mismatch recovery or end of stream). Also exported from
+`@ingenui/incremental-jsx-parser/react`.
+
+```tsx
+function CodeBlock({ children }: { children?: ReactNode }) {
+  const complete = useIsElementComplete();
+  // Show raw text while streaming; highlight once the block is settled.
+  return complete ? <Highlighted>{children}</Highlighted> : <pre>{children}</pre>;
+}
+```
+
+- **Props are always final.** An element only appears once its opening tag
+  is complete, so the flag only concerns the children.
+- **Per element, not per stream.** A component closed early in the stream
+  reads `true` while the rest of the stream is still arriving.
+- **No remount on completion.** Every resolved component element is wrapped
+  in a context provider whose value flips; the component re-renders with the
+  same state.
+- **Nearest component wins.** The value comes from the closest
+  parser-rendered component element, so a component used *internally* by a
+  catalog component sees its host's status. Outside any parser-rendered tree
+  the hook returns `true`, so the same component works in static code.
+- Nested JSX inside an expression (e.g. `icon={<Icon />}`) is buffered until
+  its `}`, so it is always complete when it appears.

@@ -50,7 +50,7 @@ export type {
   SchemaType,
 } from "./core";
 export type { JsxStreamSource } from "./stream";
-export { Pending, resolveComponentEntry } from "./render";
+export { Pending, resolveComponentEntry, useIsElementComplete } from "./render";
 export type {
   ComponentEntry,
   ComponentSpec,
