@@ -21,8 +21,10 @@
       "@ingenui/incremental-jsx-parser/core": ["../../packages/incremental-jsx-parser/src/core.ts"],
       "@ingenui/incremental-jsx-parser": ["../../packages/incremental-jsx-parser/src/index.ts"],
       "ingenui/react": ["../../packages/ingenui/src/react.ts"],
+      "ingenui/schema": ["../../packages/ingenui/src/schema.ts"],
+      "ingenui/server": ["../../packages/ingenui/src/server.ts"],
       "ingenui": ["../../packages/ingenui/src/index.ts"]
     }
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "worker", "vite.config.ts"]
 }

@@ -1,0 +1,126 @@
+/**
+ * Server-side validation of an ingenui message: the React-free counterpart
+ * of `createGenUiMessage`'s issue collection.
+ *
+ * The same fence splitter feeds each `ui+jsx` block into the parser's
+ * framework-agnostic core (`createParser`) wired with the schema's canonical
+ * checks — exactly the checks the client's parser runs — so, for the same
+ * text and schema, the validator reports the same `jsx-error` and
+ * `unclosed-fence` issues the client will, and it reports each one
+ * synchronously inside the `write()` that completes it. (`render-error` needs
+ * the real components, so it only ever happens on the client.)
+ */
+
+import type { Parser, SchemaOptions } from "@ingenui/incremental-jsx-parser/core";
+import {
+  checkProp,
+  createParser,
+  isElementAllowed,
+  resolveVariableType,
+} from "@ingenui/incremental-jsx-parser/core";
+
+import { withActionsVariable } from "./actions";
+import type { GenUiIssue, IssueListener } from "./issues";
+import { formatIssueReport } from "./issues";
+import type { ComponentDefinition, GenUiSchema } from "./schema";
+import { createFenceSplitter } from "./splitter";
+
+/**
+ * The parser-level schema options a {@link GenUiSchema} stands for, with the
+ * `actions` variable merged in (as on the client, minus the handlers). The
+ * client gets the same through `bindGenUi`.
+ */
+function schemaParserOptions(schema: GenUiSchema): SchemaOptions {
+  const components: Record<string, ComponentDefinition> = {};
+  for (const [name, entry] of Object.entries(schema.components ?? {})) {
+    components[name] = entry === true ? { props: true } : entry;
+  }
+  return withActionsVariable({
+    elements: schema.elements,
+    components,
+    variableTypes: schema.variableTypes,
+    actions: schema.actions,
+    dynamicActions: schema.dynamicActions,
+  });
+}
+
+export interface GenUiValidatorOptions {
+  /** Called for every issue, synchronously, as soon as it is found. */
+  onIssue?: IssueListener | undefined;
+}
+
+/** A push-based validator for one streamed message. */
+export interface GenUiValidator {
+  /** Feed the next chunk of the message text. */
+  write(chunk: string): void;
+  /** Signal the end of the message (reports unclosed fences and tags). */
+  end(): void;
+  /** The issues found so far (a snapshot copy). */
+  getIssues(): readonly GenUiIssue[];
+  /** The issues formatted as feedback for the model, or `null` when clean. */
+  getIssueReport(): string | null;
+}
+
+/**
+ * Create a push-based validator for one message against `schema`. Issues are
+ * reported through `onIssue` the moment they are parsed and accumulate on the
+ * validator; like the client, the result does not depend on how the text is
+ * chunked.
+ */
+export function createGenUiValidator(
+  schema: GenUiSchema,
+  options: GenUiValidatorOptions = {},
+): GenUiValidator {
+  const schemaOptions: SchemaOptions = schemaParserOptions(schema);
+  const components = schemaOptions.components ?? {};
+
+  const issues: GenUiIssue[] = [];
+  const record = (issue: GenUiIssue): void => {
+    issues.push(issue);
+    options.onIssue?.(issue);
+  };
+
+  let blockCount = 0;
+  let current: Parser | null = null;
+
+  const splitter = createFenceSplitter({
+    markdown() {},
+    markdownTail() {},
+    openUi() {
+      const blockIndex = blockCount++;
+      // Mirrors the client parser's wiring (createIncrementalJsxParser), with
+      // the component catalog being the schema's.
+      current = createParser({
+        mismatchedTag: schema.mismatchedTag,
+        onJsxError: (event) => record({ kind: "jsx-error", blockIndex, event }),
+        isKnownComponent: (tag) => Object.hasOwn(components, tag),
+        isKnownVariable: (path) => resolveVariableType(schemaOptions, path) !== undefined,
+        isAllowedElement: (tag) => isElementAllowed(schemaOptions.elements, tag),
+        checkProp: (tag, prop, value) => checkProp(tag, prop, value, schemaOptions),
+      });
+    },
+    ui(text) {
+      current?.write(text);
+    },
+    closeUi(terminated) {
+      current?.end();
+      current = null;
+      if (!terminated) record({ kind: "unclosed-fence", blockIndex: blockCount - 1 });
+    },
+  });
+
+  return {
+    write: (chunk) => splitter.write(chunk),
+    end: () => splitter.end(),
+    getIssues: () => issues.slice(),
+    getIssueReport: () => formatIssueReport(issues),
+  };
+}
+
+/** Validate a complete message against `schema` (e.g. a stored assistant turn). */
+export function validateGenUiMessage(text: string, schema: GenUiSchema): readonly GenUiIssue[] {
+  const validator = createGenUiValidator(schema);
+  validator.write(text);
+  validator.end();
+  return validator.getIssues();
+}

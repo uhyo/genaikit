@@ -6,11 +6,12 @@
  * feedback direction.
  */
 
-import type { PromptContractOptions } from "@ingenui/incremental-jsx-parser";
-import { formatPromptContract } from "@ingenui/incremental-jsx-parser";
+import type { PromptContractOptions } from "@ingenui/incremental-jsx-parser/core";
+import { formatPromptContract } from "@ingenui/incremental-jsx-parser/core";
 
 import type { ActionsDefinition } from "./actions";
 import { withActionsVariable } from "./actions";
+import type { GenUiSchema } from "./schema";
 
 export interface GenUiPromptOptions extends PromptContractOptions {
   /**
@@ -18,21 +19,31 @@ export interface GenUiPromptOptions extends PromptContractOptions {
    * `GenUiMessageOptions.actions`). Described in the prompt and merged into
    * the predefined variables as `actions` (each entry typed `"function"`).
    */
-  actions?: ActionsDefinition;
+  actions?: ActionsDefinition | undefined;
   /**
    * Same value as `GenUiMessageOptions.dynamicActions` (default `true`): tell
    * the model it may define its own actions by referencing `actions.<name>`
    * with any name. Pass `false` when the runtime opts out too.
    */
-  dynamicActions?: boolean;
+  dynamicActions?: boolean | undefined;
+}
+
+/** The declared description of an action entry, if any. */
+function actionDescription(entry: ActionsDefinition[string]): string | undefined {
+  if (typeof entry !== "object") return undefined;
+  const description = entry.description?.trim();
+  return description ? description.replace(/\s*\n\s*/g, " ") : undefined;
 }
 
 /**
  * Format the system-prompt section describing how to write a ingenui
  * message: Markdown with embedded `ui+jsx` blocks, the available actions,
  * and the exact JSX subset/schema the blocks must follow.
+ *
+ * Takes a {@link GenUiSchema} (the usual server-side call) or the same schema
+ * options passed to `createGenUiMessage`.
  */
-export function formatGenUiPrompt(options: GenUiPromptOptions = {}): string {
+export function formatGenUiPrompt(options: GenUiPromptOptions | GenUiSchema = {}): string {
   const { actions, dynamicActions } = options;
   const dynamic = dynamicActions !== false;
 
@@ -62,7 +73,14 @@ export function formatGenUiPrompt(options: GenUiPromptOptions = {}): string {
       "## Actions",
       "- The predefined variable `actions` connects the UI back to this conversation.",
     );
-    if (actionNames.length > 0) {
+    const described = actionNames.some((name) => actionDescription(actions![name]!) !== undefined);
+    if (described) {
+      lines.push("- Available actions:");
+      for (const name of actionNames) {
+        const description = actionDescription(actions![name]!);
+        lines.push(`  - \`actions.${name}\`${description ? `: ${description}` : ""}`);
+      }
+    } else if (actionNames.length > 0) {
       lines.push(
         `- Available actions: ${actionNames.map((name) => `\`actions.${name}\``).join(", ")}.`,
       );

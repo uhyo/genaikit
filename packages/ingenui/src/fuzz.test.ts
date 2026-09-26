@@ -3,9 +3,12 @@ import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
+import { bindGenUi } from "./bind";
 import type { GenUiIssue } from "./issues";
 import type { GenUiMessageOptions } from "./message";
 import { createGenUiMessage } from "./message";
+import { defineGenUiSchema } from "./schema";
+import { createGenUiValidator } from "./validator";
 
 // Seeded generator of streamed ingenui messages (markdown + ui+jsx fences,
 // valid and invalid), checking the package-level counterpart of the parser's
@@ -55,6 +58,10 @@ const JSX_SNIPPETS = [
   "<div><span>mismatch</b></div>", // mismatched-tag issue
   "<div>unclosed", // unclosed-tag issue
   "<ul><li>a</li><li>{count}</li></ul>",
+  '<Card label="x" tone="loud" />', // invalid-prop (with a schema)
+  "<Card label={count}>{user.age}</Card>", // invalid-prop + unknown-variable
+  '<p><a href="javascript:alert(1)">x</a></p>', // invalid-prop (built-in rule)
+  "<blink>old</blink>", // disallowed-element (with a schema)
 ];
 
 function genUiBlock(rng: Rng): string {
@@ -92,11 +99,11 @@ async function* chunked(input: string, sizes: number[]): AsyncGenerator<string> 
   if (offset < input.length) yield input.slice(offset);
 }
 
+const Card = ({ label, children }: { label?: string; children?: ReactNode }) =>
+  createElement("section", { "data-label": label }, children);
+
 const OPTIONS: GenUiMessageOptions = {
-  components: {
-    Card: ({ label, children }: { label?: string; children?: ReactNode }) =>
-      createElement("section", { "data-label": label }, children),
-  },
+  components: { Card },
   variables: { user: { name: "uhyo" }, count: 42 },
   actions: { submit: true }, // dynamicActions defaults to true, covering actions.launchRocket
 };
@@ -145,5 +152,55 @@ describe("Fuzz — chunking invariance of the final message", () => {
         expect(random, input).toEqual(whole);
       }
     }
+  }, 30_000);
+});
+
+// The server-side validator must report exactly the parse-time issues the
+// client finds for the same text and schema (render crashes aside) — for any
+// chunking on either side.
+
+const SCHEMA = defineGenUiSchema({
+  elements: ["div", "span", "p", "a", "ul", "li", "button"],
+  components: { Card: { props: { label: "string" } } },
+  variableTypes: { user: { name: "string" }, count: "number" },
+  actions: { submit: true },
+});
+
+const BOUND = bindGenUi(SCHEMA, {
+  components: { Card },
+  variables: { user: { name: "uhyo" }, count: 42 },
+});
+
+async function clientIssues(input: string, sizes: number[]): Promise<string[]> {
+  const message = createGenUiMessage(chunked(input, sizes), BOUND);
+  await message.done;
+  return message.getIssues().map(issueKey).toSorted();
+}
+
+function serverIssues(input: string, sizes: number[]): string[] {
+  const validator = createGenUiValidator(SCHEMA);
+  let offset = 0;
+  for (const size of sizes) {
+    validator.write(input.slice(offset, offset + size));
+    offset += size;
+  }
+  validator.write(input.slice(offset));
+  validator.end();
+  return validator.getIssues().map(issueKey).toSorted();
+}
+
+describe("Fuzz — server/client issue parity", () => {
+  it("reports the same issues on the server as on the client", async () => {
+    let withIssues = 0;
+    for (let trial = 0; trial < 60; trial++) {
+      const rng = makeRng(trial * 40503 + 11);
+      const input = genDocument(rng);
+      // oxlint-disable-next-line no-await-in-loop
+      const client = await clientIssues(input, randomSplits(rng, input.length));
+      const server = serverIssues(input, randomSplits(rng, input.length));
+      expect(server, input).toEqual(client);
+      if (client.length > 0) withIssues++;
+    }
+    expect(withIssues).toBeGreaterThan(10);
   }, 30_000);
 });

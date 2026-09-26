@@ -34,6 +34,16 @@ In `ui+jsx` block 1:
       |   ^
 ```
 
+### On the server
+
+The server finds the same `jsx-error` and `unclosed-fence` issues while the
+message streams through it (`pipeGenUi` / `validateGenUiMessage` in
+[`ingenui/server`](./server.md#the-server--ingenuiserver)). Only
+`render-error` needs the client, which can report it as structured data
+(`{ blockIndex, message }`). The server can then build the report itself
+with `formatIssueReport` instead of accepting report text from the client.
+See [building the next request on the server](./server.md#building-the-next-request-on-the-server).
+
 ## Error containment
 
 Each `ui+jsx` block renders inside its own error boundary

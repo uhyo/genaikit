@@ -189,6 +189,30 @@ code {
   align-items: center;
 }
 
+/* The system prompt the server builds from the shared schema. */
+.prompt {
+  margin-top: 10px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.prompt summary {
+  cursor: pointer;
+}
+
+.prompt pre {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  max-height: 320px;
+  overflow: auto;
+  background: #0e1426;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #c9d3ef;
+}
+
 /* ---- streaming stage ---- */
 .empty {
   margin-top: 24px;
@@ -388,6 +412,12 @@ code {
   margin: 6px 0 0;
   padding-left: 18px;
   color: var(--muted);
+}
+
+/* A next request may carry the feedback report too (multi-line). */
+.action-log li {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* ingenui feedback report (getIssueReport) */

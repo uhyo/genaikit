@@ -52,6 +52,8 @@ export interface ComponentSpec {
   component?: ComponentType<never> | undefined;
   /** Declared prop catalog; absent = any props (the author's contract). */
   props?: PropsDefinition | undefined;
+  /** What the component is for, shown to the model by `formatPromptContract`. */
+  description?: string | undefined;
 }
 
 /** Unwrap a `components`-map entry to its component. */

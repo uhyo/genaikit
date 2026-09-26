@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useIncrementalJsx } from "@ingenui/incremental-jsx-parser/react";
 import type { GenUiIssue } from "ingenui";
 import { useGenUiMessage } from "ingenui/react";
 
-import { componentNames, demoComponents, Shimmer } from "./components";
+import { fetchNextTurn, fetchSystemPrompt, streamGeneration } from "./api";
+import { componentNames, demoComponents, genUi, Shimmer } from "./components";
 import { jsxSamples, markdownSamples, type Sample } from "./samples";
 import { createCharStream } from "./streaming";
 
@@ -156,9 +157,12 @@ export function App() {
             <>
               {" "}
               — and <code>actions.*</code> names are model-defined (dynamic actions, the default).
+              The catalog is a data-only schema shared with the server, which streams the message
+              back through <code>pipeGenUi</code>, validating it on the way.
             </>
           )}
         </p>
+        {mode === "genui" && <SystemPrompt />}
       </section>
 
       {run ? (
@@ -279,48 +283,94 @@ function issueLabel(issue: GenUiIssue): string {
   }
 }
 
+/** The system prompt, as the server builds it from the shared schema. */
+function SystemPrompt() {
+  const [prompt, setPrompt] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <details
+      className="prompt"
+      onToggle={(e) => {
+        if (!e.currentTarget.open || prompt !== null) return;
+        fetchSystemPrompt().then(setPrompt, (err: unknown) => setError(String(err)));
+      }}
+    >
+      <summary>System prompt (built on the server from the shared schema)</summary>
+      <pre>{error ?? prompt ?? "Loading…"}</pre>
+    </details>
+  );
+}
+
 function GenUiStreamView({ params }: { params: RunParams }) {
   const [streamed, setStreamed] = useState("");
   const [issues, setIssues] = useState<{ id: number; message: string }[]>([]);
   const [actionLog, setActionLog] = useState<{ id: number; message: string }[]>([]);
   const [report, setReport] = useState<string | null>(null);
+  const streamedRef = useRef("");
+  const renderErrorsRef = useRef<{ blockIndex: number; message: string }[]>([]);
 
-  // Remounted per run (parent `key`): one single-use stream per message.
+  // Remounted per run (parent `key`): one single-use stream per message,
+  // streamed by the server (a simulated model, validated with pipeGenUi).
   const stream = useMemo(
     () =>
-      createCharStream(params.text, {
-        intervalMs: params.intervalMs,
-        chunkSize: params.chunkSize,
-        onProgress: setStreamed,
-      }),
+      streamGeneration(
+        { text: params.text, intervalMs: params.intervalMs, chunkSize: params.chunkSize },
+        (text) => {
+          streamedRef.current = text;
+          setStreamed(text);
+        },
+      ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 
+  const log = (message: string) => setActionLog((prev) => [...prev, { id: prev.length, message }]);
+
   const { node, message } = useGenUiMessage(stream, {
-    components: demoComponents,
+    // The schema-derived options: components bound to the shared schema.
+    ...genUi,
     Pending: Shimmer,
     onUnknownComponent: "pending",
-    // Dynamic actions are the default: the samples' actions.* names need no
-    // declaration here — firing one only emits the next-request message.
-    onAction: (event) =>
-      setActionLog((prev) => [...prev, { id: prev.length, message: event.message }]),
-    onIssue: (issue) =>
-      setIssues((prev) => [...prev, { id: prev.length, message: issueLabel(issue) }]),
+    // The client reports only the action's *name*; the server resolves it
+    // against the schema and writes the next request itself.
+    onAction: (event) => {
+      fetchNextTurn({
+        message: streamedRef.current,
+        action: event.name,
+        renderErrors: renderErrorsRef.current,
+      }).then(
+        (text) => log(text ?? ""),
+        (err: unknown) => log(`(rejected by the server: ${String(err)})`),
+      );
+    },
+    onIssue: (issue) => {
+      if (issue.kind === "render-error") {
+        renderErrorsRef.current.push({
+          blockIndex: issue.blockIndex,
+          message: issue.error instanceof Error ? issue.error.message : String(issue.error),
+        });
+      }
+      setIssues((prev) => [...prev, { id: prev.length, message: issueLabel(issue) }]);
+    },
     renderUiError: (blockIndex) => (
       <div className="ui-callout ui-callout--info">UI block {blockIndex + 1} hidden (crashed)</div>
     ),
   });
 
-  // When the message completes, surface the formatted feedback for the model.
+  // When the message completes, ask the server for the feedback it would
+  // send to the model: its own validation, plus the client's render crashes.
   useEffect(() => {
     let alive = true;
-    message.done.then(
-      () => {
-        if (alive) setReport(message.getIssueReport());
-      },
-      () => {},
-    );
+    message.done
+      .then(() =>
+        fetchNextTurn({ message: streamedRef.current, renderErrors: renderErrorsRef.current }),
+      )
+      .then(
+        (text) => {
+          if (alive) setReport(text);
+        },
+        () => {},
+      );
     return () => {
       alive = false;
     };
@@ -334,7 +384,7 @@ function GenUiStreamView({ params }: { params: RunParams }) {
 
       {actionLog.length > 0 && (
         <div className="action-log">
-          <strong>Next request to the AI (onAction):</strong>
+          <strong>Next request to the AI (onAction → built by the server):</strong>
           <ul>
             {actionLog.map((entry) => (
               <li key={entry.id}>{entry.message}</li>
@@ -345,7 +395,7 @@ function GenUiStreamView({ params }: { params: RunParams }) {
 
       {issues.length > 0 && (
         <div className="errors">
-          <strong>Issues ({issues.length}):</strong>
+          <strong>Issues found by the client ({issues.length}):</strong>
           <ul>
             {issues.map((issue) => (
               <li key={issue.id}>{issue.message}</li>
@@ -356,7 +406,7 @@ function GenUiStreamView({ params }: { params: RunParams }) {
 
       {report !== null && (
         <div className="report">
-          <strong>Feedback report for the model (getIssueReport):</strong>
+          <strong>Feedback report for the model (built by the server):</strong>
           <pre>{report}</pre>
         </div>
       )}

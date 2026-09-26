@@ -4,6 +4,8 @@ export default defineConfig({
   entry: {
     index: "src/index.ts",
     react: "src/react.ts",
+    schema: "src/schema.ts",
+    server: "src/server.ts",
   },
   format: ["esm"],
   // Emit plain `.js` / `.d.ts` (the package is `"type": "module"`).

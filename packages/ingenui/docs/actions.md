@@ -63,6 +63,26 @@ reference outside the declared `actions`, including a typo in a declared
 name, is caught as an `unknown-variable` issue, and with no `actions`
 declared the variable does not exist at all.
 
+## Actions on the server
+
+In a [shared schema](./server.md), actions are declared as data (`true`, or
+`{ description }`, which is shown to the model), and the client binds any
+handlers with `bindGenUi`. Keep the next request on the server: the client
+reports only the fired action's **name** (`event.name`), and the server
+resolves it against the schema to get the canonical message:
+
+```ts
+import { resolveGenUiAction } from "ingenui/server";
+
+const resolved = resolveGenUiAction(schema, body.action);
+if (resolved === null) return badRequest(); // not an action the model could have wired
+nextUserTurn = resolved.message; // "The `actions.subscribe` action was fired by the user."
+```
+
+That way the model's next input is never text written by the client. Any
+valid `actions.<name>` member resolves with dynamic actions; only declared
+names resolve with `dynamicActions: false`.
+
 ## Implementation note
 
 With dynamic actions, the `actions` value becomes a `Proxy` answering for any

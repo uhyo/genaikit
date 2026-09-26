@@ -9,8 +9,8 @@
  * correct itself on the next turn.
  */
 
-import type { JsxErrorEvent } from "@ingenui/incremental-jsx-parser";
-import { formatJsxError } from "@ingenui/incremental-jsx-parser";
+import type { JsxErrorEvent } from "@ingenui/incremental-jsx-parser/core";
+import { formatJsxError } from "@ingenui/incremental-jsx-parser/core";
 
 /** A problem found in a `ui+jsx` block. `blockIndex` is 0-based, in document order. */
 export type GenUiIssue =
