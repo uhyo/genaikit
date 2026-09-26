@@ -5,6 +5,24 @@
   <img src="./assets/ingenui-lockup.svg" alt="ingenui logo" width="480">
 </picture>
 
+````markdown
+**You're right.** LLMs shouldn't be forced to use those silly JSON stream formats for UI — they could just output JSX, which they are already familiar with.
+
+Would you like me to migrate your project to use JSX for UI streams? Answer using the below UI:
+
+```ui+jsx
+<Buttons>
+  <Button variant="primary" onClick={actions.yes}>
+    Yes, migrate to JSX
+  </Button>
+  <Button variant="secondary" onClick={actions.no}>
+    No, keep JSON streams
+  </Button>
+</Buttons>
+<TextInput name="reason" label="Reason (optional)" />
+```
+````
+
 A pnpm monorepo hosting a toolchain for **Generative UI**: letting an LLM
 stream UI descriptions (JSX) that render as **live React trees** while they
 arrive — safely, incrementally, and without flicker.
@@ -13,8 +31,8 @@ arrive — safely, incrementally, and without flicker.
 
 | Package | Description |
 | ------- | ----------- |
-| [`@ingenui/incremental-jsx-parser`](./packages/incremental-jsx-parser) | Incrementally parse a streamed JSX string into a live React snapshot, rendering not-yet-arrived parts as `<Pending />`. Framework-agnostic core + React adapter. |
-| [`ingenui`](./packages/ingenui) | Lightweight Generative UI framework (pronounced **in-JEN-you-ee**) on top of the parser: stream AI-generated Markdown where ```` ```ui+jsx ```` code fences render as live UI, with an `actions` convention for interactivity and structured error feedback for the model. |
+| [`ingenui`](./packages/ingenui) | Lightweight Generative UI framework (pronounced **in-JEN-you-ee**): stream AI-generated Markdown where ```` ```ui+jsx ```` code fences render as live UI, with an `actions` convention for interactivity and structured error feedback for the model. |
+| [`@ingenui/incremental-jsx-parser`](./packages/incremental-jsx-parser) | The heart of the framework; incrementally parse a streamed JSX string into a live React snapshot, rendering not-yet-arrived parts as `<Pending />`. Framework-agnostic core + React adapter. |
 
 ## Apps
 
