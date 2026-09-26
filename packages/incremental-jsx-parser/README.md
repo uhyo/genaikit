@@ -65,7 +65,7 @@ reported through `onJsxError`.
 - [Streaming model and supported JSX](./docs/streaming.md) — the single
   frontier, and the exact JSX subset that is recognized.
 - [API reference](./docs/api.md) — `useIncrementalJsx`,
-  `createIncrementalJsxParser`, and all options.
+  `createIncrementalJsxParser`, all options, and `useIsElementComplete`.
 - [The schema](./docs/schema.md) — the prop type system, built-in host prop
   rules, and `formatPromptContract`.
 - [Error handling](./docs/errors.md) — leniency, `onJsxError` events, and

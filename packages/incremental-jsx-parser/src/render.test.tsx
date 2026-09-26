@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Node } from "./core";
-import { createRenderer, type RenderOptions } from "./render";
+import { createRenderer, useIsElementComplete, type RenderOptions } from "./render";
 import { Tokenizer } from "./tokenizer";
 import { TreeBuilder } from "./tree-builder";
 
@@ -119,5 +119,59 @@ describe("React adapter — keys & memoization", () => {
     expect(span2).toBe(span1);
     // ...while the open <div> on the frontier is a fresh element each snapshot.
     expect(out2[0]).not.toBe(out1[0]);
+  });
+});
+
+describe("React adapter — element completion (useIsElementComplete)", () => {
+  function Status({ children }: { children?: ReactNode }): ReactNode {
+    return createElement("p", { "data-complete": String(useIsElementComplete()) }, children);
+  }
+  const options: RenderOptions = { components: { Status } };
+
+  it("is false while the component element is open", () => {
+    expect(toHtml(build("<Status>hi"), options)).toBe(`<p data-complete="false">hi</p>`);
+  });
+
+  it("is true once the closing tag arrives, even mid-stream", () => {
+    expect(toHtml(build("<div><Status>hi</Status>"), options)).toBe(
+      `<div><p data-complete="true">hi</p></div>`,
+    );
+  });
+
+  it("is true for a self-closing component", () => {
+    expect(toHtml(build("<div><Status/>"), options)).toBe(
+      `<div><p data-complete="true"></p></div>`,
+    );
+  });
+
+  it("is true for an element auto-closed at the end of the stream", () => {
+    expect(toHtml(build("<Status>hi", { end: true }), options)).toBe(
+      `<p data-complete="true">hi</p>`,
+    );
+  });
+
+  it("reflects the nearest component element when nested", () => {
+    expect(toHtml(build("<Status><div><Status>a</Status><Status>b"), options)).toBe(
+      `<p data-complete="false"><div><p data-complete="true">a</p>` +
+        `<p data-complete="false">b</p></div></p>`,
+    );
+  });
+
+  it("is true for components in nested JSX props (buffered until complete)", () => {
+    function Box({ icon }: { icon?: ReactNode }): ReactNode {
+      return createElement("div", null, icon);
+    }
+    expect(toHtml(build("<Box icon={<Status/>}>"), { components: { Box, Status } })).toBe(
+      `<div><p data-complete="true"></p></div>`,
+    );
+  });
+
+  it("defaults to true outside a parser-rendered tree", () => {
+    expect(renderToStaticMarkup(createElement(Status))).toBe(`<p data-complete="true"></p>`);
+  });
+
+  it("keeps the component element key on the wrapper", () => {
+    const out = createRenderer(options).render(build("<Status>hi")) as ReactElement[];
+    expect(out[0]!.key).toBe("0");
   });
 });

@@ -19,6 +19,7 @@ import { createIncrementalJsxParser } from "./index";
 import type { IncrementalJsxParserOptions, JsxStreamSource } from "./index";
 
 export type { IncrementalJsxParserOptions, JsxStreamSource } from "./index";
+export { useIsElementComplete } from "./render";
 
 /**
  * Render a streamed JSX source as a live React tree. The returned node updates

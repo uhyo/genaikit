@@ -62,6 +62,11 @@ store, for `done` / `getIssueReport()`.
 the request is made, so the same code can read the issue report on
 completion).
 
+`useIsElementComplete()` is re-exported from the parser for the components
+in your catalog: `false` while the component's element is still streaming,
+`true` once it is settled. See the parser's
+[API reference](../../incremental-jsx-parser/docs/api.md#useiselementcomplete--ingenuiincremental-jsx-parser).
+
 ## `formatGenUiPrompt(options?)` — `ingenui`
 
 Builds the section of the generating model's system prompt that describes
