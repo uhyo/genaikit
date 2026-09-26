@@ -27,6 +27,11 @@ the right.
 - **The single frontier** — exactly one shimmer at a time: after the Markdown
   when the frontier is in prose, or nested in the innermost open element of a
   streaming UI block.
+- **Per-component completion** — demo components read `useIsElementComplete()`:
+  a `Card` shows an animated rainbow border while its children are still
+  streaming; `Badge` and `Button` hide the shimmer inside them (it would make
+  them wider than their final size), and a `Button` stays disabled until its
+  label is final.
 - **Lenient parsing** — the malformed samples omit close tags, reference
   unknown components, and use unsupported `{ }` expressions; the tree recovers
   and the problems surface as structured events (`onJsxError` in parser mode,

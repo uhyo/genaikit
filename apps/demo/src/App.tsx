@@ -4,14 +4,9 @@ import { useIncrementalJsx } from "@ingenui/incremental-jsx-parser/react";
 import type { GenUiIssue } from "ingenui";
 import { useGenUiMessage } from "ingenui/react";
 
-import { componentNames, demoComponents } from "./components";
+import { componentNames, demoComponents, Shimmer } from "./components";
 import { jsxSamples, markdownSamples, type Sample } from "./samples";
 import { createCharStream } from "./streaming";
-
-/** Frontier placeholder: a shimmering block shown wherever content is pending. */
-function Shimmer() {
-  return <span className="shimmer" aria-label="loading" />;
-}
 
 type Mode = "genui" | "jsx";
 
@@ -85,7 +80,10 @@ export function App() {
           is Markdown where <code>```ui+jsx</code> code fences render as interactive UI (with{" "}
           <code>actions.*</code> wiring events back to the conversation); in parser mode it is raw
           JSX. Either way, what has not arrived yet is a single <code>&lt;Pending /&gt;</code>{" "}
-          shimmer at the streaming frontier.
+          shimmer at the streaming frontier, and components can ask{" "}
+          <code>useIsElementComplete()</code> whether their own children are still arriving — cards
+          glow while open, badges and buttons hide the shimmer (and buttons stay disabled) until
+          their label is final.
         </p>
       </header>
 
